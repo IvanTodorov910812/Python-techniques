@@ -283,23 +283,77 @@ for k, v in report.items():
 
 # --- Visualization ---
 import matplotlib.pyplot as plt
+import numpy as np
+import glob
+
 
 def visualize_report(report):
     categories = list(report.keys())[:-1]  # exclude final score
     scores = [report[k] if isinstance(report[k], float) else float(report[k]) for k in categories]
-
-    plt.figure(figsize=(10, 5))
-    bars = plt.bar(categories, scores, color='skyblue')
-    plt.ylim(0, 1)
-    plt.title("CV vs Job Description Match Report")
-    plt.xticks(rotation=45, ha='right')
-    plt.ylabel("Score")
-
+    fig, ax = plt.subplots(figsize=(10, 5))
+    bars = ax.bar(categories, scores, color='skyblue')
+    ax.set_ylim(0, 1)
+    ax.set_title("CV vs Job Description Match Report (Bar Chart)")
+    ax.set_xticklabels(categories, rotation=45, ha='right')
+    ax.set_ylabel("Score")
     for bar in bars:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, f"{yval:.2f}", ha='center', va='bottom')
+        ax.text(bar.get_x() + bar.get_width()/2, yval + 0.02, f"{yval:.2f}", ha='center', va='bottom')
+    fig.tight_layout()
+    return fig
 
-    plt.tight_layout()
-    plt.show()
+def visualize_radar(report):
+    categories = list(report.keys())[:-1]  # exclude final score
+    scores = [report[k] if isinstance(report[k], float) else float(report[k]) for k in categories]
+    N = len(categories)
+    angles = np.linspace(0, 2 * np.pi, N, endpoint=False).tolist()
+    scores += scores[:1]
+    angles += angles[:1]
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    ax.plot(angles, scores, 'o-', linewidth=2, label='Match Scores')
+    ax.fill(angles, scores, alpha=0.25)
+    ax.set_thetagrids(np.degrees(angles[:-1]), categories)
+    ax.set_ylim(0, 1)
+    ax.set_title("CV vs JD Match Report (Radar Chart)")
+    ax.legend(loc='upper right', bbox_to_anchor=(1.1, 1.1))
+    fig.tight_layout()
+    return fig
+
+# Batch ranking function
+def rank_cvs(jd_data, cv_folder):
+    ranking = []
+    for cv_path in glob.glob(os.path.join(cv_folder, "*.pdf")):
+        cv_text = extract_text_from_pdf(cv_path)
+        cv_text_clean = re.sub(r'\s+', ' ', cv_text)
+        cv_data = {
+            'text': cv_text_clean,
+            'skills': extract_skills(cv_text_clean),
+            'title': extract_title(cv_text_clean),
+            'education': extract_education(cv_text_clean)
+        }
+        score = final_match_score(cv_data, jd_data)
+        report = match_report(cv_data, jd_data)
+        ranking.append((cv_path, score, report))
+
+    ranking.sort(key=lambda x: x[1], reverse=True)
+    return ranking
+
+# Example usage for batch ranking and radar chart
+# Uncomment and set your folder and JD file to use
+# jd_file = "sample-job-description.pdf"
+# cv_folder = "cvs_folder"
+# jd_text = extract_text_from_pdf(jd_file)
+# jd_text_clean = re.sub(r'\s+', ' ', jd_text)
+# jd_data = {
+#     'text': jd_text_clean,
+#     'skills': extract_skills(jd_text_clean),
+#     'title': extract_title(jd_text_clean),
+#     'education': extract_education(jd_text_clean)
+# }
+# ranking = rank_cvs(jd_data, cv_folder)
+# for i, (cv_file, score, report) in enumerate(ranking[:5]):
+#     print(f"{i+1}. {cv_file} - Score: {score:.2f}")
+#     visualize_radar(report)
 
 visualize_report(report)
+visualize_radar(report)
