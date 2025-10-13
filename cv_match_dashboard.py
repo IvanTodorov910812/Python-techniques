@@ -2,6 +2,7 @@ import streamlit as st
 import tempfile
 import os
 import io
+import json
 import base64
 import re
 import plotly.graph_objs as go
@@ -133,6 +134,31 @@ def create_funnel_chart(cv_scores, criteria_labels):
         title="CV Evaluation Funnel",
         showlegend=False
     )
+    return fig
+
+def visualize_radar(report_data):
+    """Create a radar chart visualization for a single candidate's report."""
+    # Extract metrics and scores, excluding 'Final Score' if present
+    metrics = [k for k in report_data.keys() if k != 'Final Score']
+    scores = [float(report_data[k]) if isinstance(report_data[k], (int, float)) else 0.0 for k in metrics]
+    
+    # Create radar chart
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(projection='polar'))
+    
+    # Plot data
+    angles = np.linspace(0, 2*np.pi, len(metrics), endpoint=False)
+    scores = np.concatenate((scores, [scores[0]]))  # complete the circle
+    angles = np.concatenate((angles, [angles[0]]))  # complete the circle
+    
+    ax.plot(angles, scores)
+    ax.fill(angles, scores, alpha=0.25)
+    
+    # Set chart properties
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(metrics)
+    ax.set_ylim(0, 1)
+    plt.title('Candidate Score Breakdown')
+    
     return fig
 
 def create_comparison_matrix(candidates):
@@ -631,35 +657,231 @@ if cv_file and jd_file:
                 mime="application/pdf"
             )
 
-    # Batch ranking UI
-    st.markdown("### Batch Ranking of CVs")
-    cv_folder = st.text_input("Enter folder path containing CV PDFs for batch ranking:")
-    if cv_folder:
-        ranking = rank_cvs(jd_data, cv_folder)
+    # --- Enhanced Batch Ranking Functions ---
+    def validate_folder_path(folder_path):
+        """Validate if the folder path exists and contains PDF files."""
+        if not os.path.exists(folder_path):
+            return False, "Folder does not exist"
+        if not os.path.isdir(folder_path):
+            return False, "Path is not a directory"
+        pdf_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.pdf')]
+        if not pdf_files:
+            return False, "No PDF files found in the folder"
+        return True, f"Found {len(pdf_files)} PDF files"
+
+    def create_ranking_summary(ranking_data):
+        """Create a summary DataFrame for the ranking results."""
+        summary = []
+        for cv_path, score, report in ranking_data:
+            summary.append({
+                'Candidate': os.path.basename(cv_path),
+                'Overall Score': float(score),
+                'Skills Match': float(report.get('Skill Match', 0)),
+                'Experience Match': float(report.get('Experience Match', 0)),
+                'Education Match': float(report.get('Education Match', 0)),
+                'Title Match': float(report.get('Title Match', 0)),
+                'Location Match': float(report.get('Location Match', 0))
+            })
+        return pd.DataFrame(summary)
+
+    def create_ranking_visualizations(ranking_data):
+        """Create visualizations for ranking comparison."""
+        df = create_ranking_summary(ranking_data)
         
-        # Individual CV results
-        for i, (cv_file_path, score, cv_report) in enumerate(ranking[:5]):
-            st.write(f"{i+1}. {os.path.basename(cv_file_path)} - Score: {score:.2f}")
-            st.write(cv_report)
-            fig_radar = visualize_radar(cv_report)
-            st.pyplot(fig_radar)
+        # Bar chart comparing overall scores
+        score_fig = px.bar(
+            df,
+            x='Candidate',
+            y='Overall Score',
+            title='Candidate Overall Scores Comparison'
+        )
         
-        # Comparison Matrix
-        if ranking:
-            st.markdown("### Candidate Comparison Matrix")
-            candidates_data = []
-            for cv_file_path, score, cv_report in ranking[:5]:
-                candidates_data.append({
-                    'Candidate': os.path.basename(cv_file_path),
-                    'Score': f"{score:.2f}",
-                    'Skills Match': f"{cv_report.get('Skill Match', 0):.2f}",
-                    'Experience Match': cv_report.get('Experience Match', 0),
-                    'Education Match': f"{cv_report.get('Education Match', 0):.2f}"
-                })
+        # Heatmap of all scores
+        score_columns = [col for col in df.columns if 'Match' in col or 'Score' in col]
+        heatmap_fig = px.imshow(
+            df[score_columns],
+            labels=dict(x='Candidate', y='Metric', color='Score'),
+            title='Detailed Score Comparison Heatmap'
+        )
+        
+        # Radar chart comparing top candidates
+        # Make sure we don't try to get more candidates than we have
+        n_candidates = min(5, len(df))
+        top_candidates = df.nlargest(n_candidates, 'Overall Score')
+        radar_fig = go.Figure()
+        for _, row in top_candidates.iterrows():
+            radar_fig.add_trace(go.Scatterpolar(
+                r=row[score_columns].values,
+                theta=score_columns,
+                fill='toself',
+                name=row['Candidate']
+            ))
+        radar_fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0,1])),
+            showlegend=True,
+            title="Top Candidates Comparison (Radar Chart)"
+        )
+        
+        return score_fig, heatmap_fig, radar_fig
+
+    def export_ranking_report(ranking_data, jd_data):
+        """Export ranking results to various formats."""
+        summary_df = create_ranking_summary(ranking_data)
+        
+        # Excel export
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            # Format the summary with percentages for display
+            display_df = summary_df.copy()
+            for col in display_df.columns:
+                if col != 'Candidate':
+                    display_df[col] = display_df[col].apply(lambda x: f"{x:.2%}")
+            display_df.to_excel(writer, sheet_name='Ranking Summary', index=False)
             
-            if candidates_data:
-                matrix_fig = create_comparison_matrix(candidates_data)
-                st.plotly_chart(matrix_fig, use_container_width=True, key="comparison_matrix")
+            # Detailed scores sheet
+            detailed_scores = []
+            for cv_path, score, report in ranking_data:
+                detailed_scores.append({
+                    'Candidate': os.path.basename(cv_path),
+                    **{k: float(v) if isinstance(v, (int, float)) else v 
+                       for k, v in report.items()}
+                })
+            pd.DataFrame(detailed_scores).to_excel(writer, sheet_name='Detailed Scores', index=False)
+        
+        # JSON export
+        json_data = {
+            'ranking_date': datetime.now().isoformat(),
+            'job_description': {
+                'title': jd_data.get('title', ''),
+                'required_skills': list(jd_data.get('skills', set())),
+            },
+            'candidates': [
+                {
+                    'name': os.path.basename(cv_path),
+                    'overall_score': score,
+                    'detailed_scores': report
+                }
+                for cv_path, score, report in ranking_data
+            ]
+        }
+        
+        return excel_buffer.getvalue(), json.dumps(json_data, indent=2)
+
+    # --- Enhanced Batch Ranking UI ---
+    st.markdown("### Batch Ranking of CVs")
+
+    # File uploader for multiple CVs
+    uploaded_files = st.file_uploader("Upload multiple CVs", type=["pdf"], accept_multiple_files=True)
+
+    # Or use folder path
+    st.markdown("#### OR")
+    cv_folder = st.text_input("Enter folder path containing CV PDFs:")
+
+    if cv_folder:
+        # Validate folder path
+        is_valid, message = validate_folder_path(cv_folder)
+        if not is_valid:
+            st.error(message)
+        else:
+            st.success(message)
+            
+            # Number of results to show
+            num_results = st.slider("Number of results to show", min_value=1, max_value=20, value=5)
+            
+            # Get ranking results
+            ranking = rank_cvs(jd_data, cv_folder)
+            
+            # Create summary DataFrame
+            summary_df = create_ranking_summary(ranking[:num_results])
+            
+            # Display summary table
+            st.markdown("#### Ranking Summary")
+            st.dataframe(summary_df)
+            
+            # Create and display visualizations
+            score_fig, heatmap_fig, radar_fig = create_ranking_visualizations(ranking[:num_results])
+            
+            st.plotly_chart(score_fig, use_container_width=True)
+            st.plotly_chart(heatmap_fig, use_container_width=True)
+            st.plotly_chart(radar_fig, use_container_width=True)
+            
+            # Detailed results in expandable sections
+            st.markdown("#### Detailed Results")
+            for i, (cv_file_path, score, cv_report) in enumerate(ranking[:num_results]):
+                with st.expander(f"{i+1}. {os.path.basename(cv_file_path)} - Score: {score:.2f}"):
+                    st.write(cv_report)
+                    # Create radar chart for individual candidate
+                    fig_radar = visualize_radar(cv_report)
+                    st.pyplot(fig_radar)
+            
+            # Export options
+            st.markdown("#### Export Results")
+            excel_data, json_data = export_ranking_report(ranking[:num_results], jd_data)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="Download Excel Report",
+                    data=excel_data,
+                    file_name="cv_ranking_report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            with col2:
+                st.download_button(
+                    label="Download JSON Report",
+                    data=json_data,
+                    file_name="cv_ranking_report.json",
+                    mime="application/json"
+                )
+
+    elif uploaded_files:
+        # Process uploaded files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save uploaded files to temporary directory
+            for uploaded_file in uploaded_files:
+                file_path = os.path.join(temp_dir, uploaded_file.name)
+                with open(file_path, 'wb') as f:
+                    f.write(uploaded_file.getvalue())
+            
+            # Use the same ranking logic as with folder path
+            num_results = st.slider("Number of results to show", min_value=1, max_value=len(uploaded_files), value=min(5, len(uploaded_files)))
+            ranking = rank_cvs(jd_data, temp_dir)
+            
+            # Display results using the same visualization and export functions
+            summary_df = create_ranking_summary(ranking[:num_results])
+            st.markdown("#### Ranking Summary")
+            st.dataframe(summary_df)
+            
+            score_fig, heatmap_fig, radar_fig = create_ranking_visualizations(ranking[:num_results])
+            st.plotly_chart(score_fig, use_container_width=True)
+            st.plotly_chart(heatmap_fig, use_container_width=True)
+            st.plotly_chart(radar_fig, use_container_width=True)
+            
+            st.markdown("#### Detailed Results")
+            for i, (cv_file_path, score, cv_report) in enumerate(ranking[:num_results]):
+                with st.expander(f"{i+1}. {os.path.basename(cv_file_path)} - Score: {score:.2f}"):
+                    st.write(cv_report)
+                    fig_radar = visualize_radar(cv_report)
+                    st.pyplot(fig_radar)
+            
+            st.markdown("#### Export Results")
+            excel_data, json_data = export_ranking_report(ranking[:num_results], jd_data)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="Download Excel Report",
+                    data=excel_data,
+                    file_name="cv_ranking_report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            with col2:
+                st.download_button(
+                    label="Download JSON Report",
+                    data=json_data,
+                    file_name="cv_ranking_report.json",
+                    mime="application/json"
+                )
 
     # Placeholder for LLM explanation
     st.markdown("### Explanation")

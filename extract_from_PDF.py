@@ -183,9 +183,30 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 def skill_match(cv_skills: set, jd_skills: set) -> float:
     if not cv_skills or not jd_skills:
         return 0.0
-    intersection = cv_skills & jd_skills
-    union = cv_skills | jd_skills
-    return len(intersection) / len(union)
+    
+    # Convert skills to lowercase for better matching
+    cv_skills_lower = {s.lower() for s in cv_skills}
+    jd_skills_lower = {s.lower() for s in jd_skills}
+    
+    # Calculate exact matches
+    exact_matches = cv_skills_lower & jd_skills_lower
+    exact_score = len(exact_matches) / len(jd_skills_lower) if jd_skills_lower else 0
+    
+    # Calculate fuzzy matches for remaining skills
+    remaining_cv = cv_skills_lower - exact_matches
+    remaining_jd = jd_skills_lower - exact_matches
+    fuzzy_matches = 0
+    
+    for cv_skill in remaining_cv:
+        for jd_skill in remaining_jd:
+            if fuzz.ratio(cv_skill, jd_skill) > 80:  # High similarity threshold
+                fuzzy_matches += 1
+                break
+    
+    fuzzy_score = fuzzy_matches / len(jd_skills_lower) if jd_skills_lower else 0
+    
+    # Combine scores with more weight on exact matches
+    return 0.7 * exact_score + 0.3 * fuzzy_score
 
 def extract_years_experience(text: str) -> int:
     matches = re.findall(r'(\d+)\+?\s+years?', text, re.IGNORECASE)
@@ -199,7 +220,36 @@ def experience_match(cv_text: str, jd_text: str) -> int:
 def education_match(cv_edu: str, jd_edu: str) -> float:
     if not cv_edu or not jd_edu:
         return 0.0
-    return fuzz.token_set_ratio(cv_edu, jd_edu) / 100
+    
+    # Define education levels and their relative weights
+    edu_levels = {
+        'phd': 4,
+        'doctorate': 4,
+        'master': 3,
+        'msc': 3,
+        'bachelor': 2,
+        'bsc': 2,
+        'diploma': 1
+    }
+    
+    cv_edu_lower = cv_edu.lower()
+    jd_edu_lower = jd_edu.lower()
+    
+    # Find the highest education level mentioned in each
+    cv_level = max((edu_levels.get(level, 0) for level in edu_levels if level in cv_edu_lower), default=0)
+    jd_level = max((edu_levels.get(level, 0) for level in edu_levels if level in jd_edu_lower), default=0)
+    
+    # Calculate base score from fuzzy matching
+    base_score = fuzz.token_set_ratio(cv_edu, jd_edu) / 100
+    
+    # Adjust score based on education level comparison
+    if cv_level >= jd_level:
+        level_bonus = 0.2  # Bonus for meeting or exceeding required education
+    else:
+        level_penalty = (jd_level - cv_level) / 4  # Penalty proportional to the difference
+        base_score *= (1 - level_penalty)
+    
+    return min(1.0, base_score + (0.2 if cv_level >= jd_level else 0))
 
 def title_match(cv_title: str, jd_title: str) -> float:
     return SequenceMatcher(None, cv_title.lower(), jd_title.lower()).ratio()
@@ -243,16 +293,153 @@ def match_report(cv_data: dict, jd_data: dict) -> dict:
     report['Final Score'] = final_match_score(cv_data, jd_data)
     return report
 
+def calculate_skill_importance(skills: set, jd_text: str) -> dict:
+    """Calculate importance weights for different skills based on job description context."""
+    skill_weights = {}
+    jd_text_lower = jd_text.lower()
+    
+    for skill in skills:
+        weight = 1.0
+        skill_lower = skill.lower()
+        
+        # Increase weight for skills mentioned multiple times
+        mentions = jd_text_lower.count(skill_lower)
+        if mentions > 1:
+            weight += min(0.5, mentions * 0.1)  # Cap at 50% boost
+        
+        # Increase weight for skills mentioned in requirements
+        if "required" in jd_text_lower and skill_lower in jd_text_lower[jd_text_lower.find("required"):]:
+            weight += 0.3
+        
+        # Increase weight for skills mentioned early in the JD
+        if skill_lower in jd_text_lower[:len(jd_text_lower)//3]:
+            weight += 0.2
+            
+        skill_weights[skill] = weight
+    
+    # Normalize weights
+    total_weight = sum(skill_weights.values())
+    if total_weight > 0:
+        skill_weights = {k: v/total_weight for k, v in skill_weights.items()}
+    
+    return skill_weights
+
 def final_match_score(cv_data: dict, jd_data: dict) -> float:
-    score = 0
-    score += 0.3 * skill_match(cv_data['skills'], jd_data['skills'])
-    score += 0.2 * tfidf_similarity(cv_data['text'], jd_data['text'])
-    score += 0.2 * semantic_similarity(cv_data['text'], jd_data['text'])
-    score += 0.1 * title_match(cv_data['title'], jd_data['title'])
-    score += 0.1 * education_match(cv_data['education'], jd_data['education'])
-    score += 0.05 * experience_match(cv_data['text'], jd_data['text'])
-    score += 0.05 * location_match(cv_data['text'], jd_data['text'])
-    return score
+    # Calculate individual scores
+    skill_score = skill_match(cv_data['skills'], jd_data['skills'])
+    tfidf_score = tfidf_similarity(cv_data['text'], jd_data['text'])
+    semantic_score = semantic_similarity(cv_data['text'], jd_data['text'])
+    title_score = title_match(cv_data['title'], jd_data['title'])
+    education_score = education_match(cv_data['education'], jd_data['education'])
+    experience_score = experience_match(cv_data['text'], jd_data['text'])
+    location_score = location_match(cv_data['text'], jd_data['text'])
+    
+    # Calculate skill importance weights
+    skill_weights = calculate_skill_importance(jd_data['skills'], jd_data['text'])
+    
+    # Enhanced scoring system with dynamic weights
+    # Primary criteria (must-haves) - 75% of base score
+    primary_weights = {
+        'skills': 0.45,     # Most critical
+        'semantic': 0.30,   # Overall relevance
+        'qual': 0.25       # Qualifications (education/experience)
+    }
+    
+    # Calculate qualification score with progressive bonuses
+    qual_score = max(experience_score, education_score)  # Base qualification
+    if experience_score > 0.7 and education_score > 0.7:
+        qual_score = max(qual_score, (experience_score + education_score) / 1.8)  # Bonus for both high
+    
+    primary_score = (
+        primary_weights['skills'] * skill_score +
+        primary_weights['semantic'] * semantic_score +
+        primary_weights['qual'] * qual_score
+    )
+    
+    # Secondary criteria (nice-to-haves) - 25% of base score
+    secondary_weights = {
+        'tfidf': 0.35,      # Keyword relevance
+        'title': 0.30,      # Role alignment
+        'extra_qual': 0.25, # Additional qualifications
+        'location': 0.10    # Location match
+    }
+    
+    secondary_score = (
+        secondary_weights['tfidf'] * tfidf_score +
+        secondary_weights['title'] * title_score +
+        secondary_weights['extra_qual'] * min(experience_score, education_score) +
+        secondary_weights['location'] * location_score
+    )
+    
+    # Calculate base score with dynamic weighting
+    base_score = (0.75 * primary_score + 0.25 * secondary_score)
+    
+    # Enhanced boosting system
+    boosters = 1.0
+    
+    # Progressive skill match boosting
+    if skill_score > 0.9:
+        boosters += 0.25  # Exceptional skill match
+    elif skill_score > 0.8:
+        boosters += 0.15  # Strong skill match
+    elif skill_score > 0.7:
+        boosters += 0.10  # Good skill match
+    
+    # Qualification excellence boost
+    if experience_score > 0.8 and education_score > 0.8:
+        boosters += 0.15
+    elif experience_score > 0.7 and education_score > 0.7:
+        boosters += 0.10
+    
+    # Semantic relevance boost
+    if semantic_score > 0.8:
+        boosters += 0.15
+    elif semantic_score > 0.7:
+        boosters += 0.10
+    
+    # Title alignment boost
+    if title_score > 0.9:
+        boosters += 0.10
+    
+    # Comprehensive excellence boost
+    if all(score > 0.7 for score in [skill_score, semantic_score, qual_score]):
+        boosters += 0.15
+    
+    # Progressive penalty system
+    penalties = 1.0
+    
+    # Critical skills penalty
+    if skill_score < 0.3:
+        penalties -= 0.30
+    elif skill_score < 0.4:
+        penalties -= 0.20
+    elif skill_score < 0.5:
+        penalties -= 0.10
+    
+    # Semantic relevance penalty
+    if semantic_score < 0.3:
+        penalties -= 0.25
+    elif semantic_score < 0.4:
+        penalties -= 0.15
+    
+    # Qualification penalty
+    if qual_score < 0.3:
+        penalties -= 0.20
+    
+    # Calculate final score
+    final_score = base_score * boosters * penalties
+    
+    # Normalize score
+    final_score = min(1.0, max(0.0, final_score))
+    
+    # Apply enhanced distribution curve
+    if final_score > 0.3:
+        # Custom sigmoid that maintains more granularity in mid-range
+        # while still providing good separation at the extremes
+        x = 2.5 * (final_score - 0.5)
+        final_score = 0.5 + 0.5 * (x / np.sqrt(1 + x*x))
+    
+    return final_score
 
 # Prepare data for scoring
 edu_cv = extract_education(cv_text)
