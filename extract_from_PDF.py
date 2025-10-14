@@ -3,6 +3,7 @@ import fitz  # PyMuPDF
 import pdfplumber
 import layoutparser as lp
 import os
+import numpy as np   # ✅ Add this line
 
 def extract_text_from_pdf(pdf_path):
     text = ""
@@ -129,7 +130,7 @@ print("\n📊 Step 2.3: What Does the Score Mean?")
 print("Score Range\tInterpretation")
 print("0.80 – 1.00\tVery strong match")
 print("0.60 – 0.79\tGood match, potentially relevant")
-print("0.40 – 0.59\tWeak match, needs review")
+print("0.40 – 0.59\tMatch, needs review")
 
 print("< 0.40\tLikely irrelevant or very generic/resume mismatch")
 
@@ -325,121 +326,65 @@ def calculate_skill_importance(skills: set, jd_text: str) -> dict:
     return skill_weights
 
 def final_match_score(cv_data: dict, jd_data: dict) -> float:
-    # Calculate individual scores
-    skill_score = skill_match(cv_data['skills'], jd_data['skills'])
-    tfidf_score = tfidf_similarity(cv_data['text'], jd_data['text'])
-    semantic_score = semantic_similarity(cv_data['text'], jd_data['text'])
-    title_score = title_match(cv_data['title'], jd_data['title'])
-    education_score = education_match(cv_data['education'], jd_data['education'])
-    experience_score = experience_match(cv_data['text'], jd_data['text'])
-    location_score = location_match(cv_data['text'], jd_data['text'])
-    
-    # Calculate skill importance weights
-    skill_weights = calculate_skill_importance(jd_data['skills'], jd_data['text'])
-    
-    # Enhanced scoring system with dynamic weights
-    # Primary criteria (must-haves) - 75% of base score
-    primary_weights = {
-        'skills': 0.45,     # Most critical
-        'semantic': 0.30,   # Overall relevance
-        'qual': 0.25       # Qualifications (education/experience)
-    }
-    
-    # Calculate qualification score with progressive bonuses
-    qual_score = max(experience_score, education_score)  # Base qualification
-    if experience_score > 0.7 and education_score > 0.7:
-        qual_score = max(qual_score, (experience_score + education_score) / 1.8)  # Bonus for both high
-    
-    primary_score = (
-        primary_weights['skills'] * skill_score +
-        primary_weights['semantic'] * semantic_score +
-        primary_weights['qual'] * qual_score
+    """
+    Compute a balanced final match score between CV and Job Description
+    with calibrated weighting, consistency adjustment, and smooth scaling.
+    """
+
+    # --- Extract component scores ---
+    skill = skill_match(cv_data['skills'], jd_data['skills'])
+    sem = semantic_similarity(cv_data['text'], jd_data['text'])
+    tfidf = tfidf_similarity(cv_data['text'], jd_data['text'])
+    edu = education_match(cv_data['education'], jd_data['education'])
+    exp = experience_match(cv_data['text'], jd_data['text'])
+    title = title_match(cv_data['title'], jd_data['title'])
+    loc = location_match(cv_data['text'], jd_data['text'])
+
+    # --- Weight distribution (normalized to 1.0) ---
+    weights = {
+    "skills": 0.10,
+    "semantic": 0.40,
+    "tfidf": 0.20,
+    "education": 0.10,
+    "experience": 0.10,
+    "title": 0.07,
+    "location": 0.03
+}
+
+    # --- Weighted composite base score ---
+    base = (
+        weights["skills"] * skill +
+        weights["semantic"] * sem +
+        weights["tfidf"] * tfidf +
+        weights["education"] * edu +
+        weights["experience"] * exp +
+        weights["title"] * title +
+        weights["location"] * loc
     )
-    
-    # Secondary criteria (nice-to-haves) - 25% of base score
-    secondary_weights = {
-        'tfidf': 0.35,      # Keyword relevance
-        'title': 0.30,      # Role alignment
-        'extra_qual': 0.25, # Additional qualifications
-        'location': 0.10    # Location match
-    }
-    
-    secondary_score = (
-        secondary_weights['tfidf'] * tfidf_score +
-        secondary_weights['title'] * title_score +
-        secondary_weights['extra_qual'] * min(experience_score, education_score) +
-        secondary_weights['location'] * location_score
-    )
-    
-    # Calculate base score with dynamic weighting
-    base_score = (0.75 * primary_score + 0.25 * secondary_score)
-    
-    # Enhanced boosting system
-    boosters = 1.0
-    
-    # Progressive skill match boosting
-    if skill_score > 0.9:
-        boosters += 0.25  # Exceptional skill match
-    elif skill_score > 0.8:
-        boosters += 0.15  # Strong skill match
-    elif skill_score > 0.7:
-        boosters += 0.10  # Good skill match
-    
-    # Qualification excellence boost
-    if experience_score > 0.8 and education_score > 0.8:
-        boosters += 0.15
-    elif experience_score > 0.7 and education_score > 0.7:
-        boosters += 0.10
-    
-    # Semantic relevance boost
-    if semantic_score > 0.8:
-        boosters += 0.15
-    elif semantic_score > 0.7:
-        boosters += 0.10
-    
-    # Title alignment boost
-    if title_score > 0.9:
-        boosters += 0.10
-    
-    # Comprehensive excellence boost
-    if all(score > 0.7 for score in [skill_score, semantic_score, qual_score]):
-        boosters += 0.15
-    
-    # Progressive penalty system
-    penalties = 1.0
-    
-    # Critical skills penalty
-    if skill_score < 0.3:
-        penalties -= 0.30
-    elif skill_score < 0.4:
-        penalties -= 0.20
-    elif skill_score < 0.5:
-        penalties -= 0.10
-    
-    # Semantic relevance penalty
-    if semantic_score < 0.3:
-        penalties -= 0.25
-    elif semantic_score < 0.4:
-        penalties -= 0.15
-    
-    # Qualification penalty
-    if qual_score < 0.3:
-        penalties -= 0.20
-    
-    # Calculate final score
-    final_score = base_score * boosters * penalties
-    
-    # Normalize score
-    final_score = min(1.0, max(0.0, final_score))
-    
-    # Apply enhanced distribution curve
-    if final_score > 0.3:
-        # Custom sigmoid that maintains more granularity in mid-range
-        # while still providing good separation at the extremes
-        x = 2.5 * (final_score - 0.5)
-        final_score = 0.5 + 0.5 * (x / np.sqrt(1 + x*x))
-    
-    return final_score
+
+    # --- Consistency adjustment ---
+    # Reward profiles with balanced technical-textual alignment
+    consistency = np.mean([skill, sem, tfidf])
+    if consistency > 0.7:
+        base += 0.05 * consistency  # small bonus for uniformity
+
+    # --- Penalty for critical mismatches ---
+    if skill < 0.4 or sem < 0.4:
+        base *= 0.85  # soft penalty for weak fundamentals
+
+    # ✅ Option A — Gentle Boost (add this line)
+    base = min(1.0, base + 0.05)  # small global uplift for calibration
+    # --- Sigmoid normalization for smooth grading ---
+    final = 1 / (1 + np.exp(-2 * (base - 0.5)))  # centers around 0.5 mid-fit
+    final = float(np.clip(final, 0.0, 1.0))
+
+    # --- Interpretation tiers ---
+    # 0.00–0.39 → Weak Fit
+    # 0.40–0.59 → Partial Fit (trainable)
+    # 0.60–0.74 → Good Fit
+    # 0.75–1.00 → Excellent Fit
+
+    return round(final, 3)
 
 # Prepare data for scoring
 edu_cv = extract_education(cv_text)

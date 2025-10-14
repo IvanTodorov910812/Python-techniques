@@ -309,15 +309,54 @@ if cv_file and jd_file:
 
     report = match_report(cv_data, jd_data)
 
-    # Red flag detection
-    red_flags = detect_red_flags(cv_text, jd_text)
+    # --- Score Interpretation ---
+    final_score = report.get("Final Score", 0)
 
-    st.write(report)
+    # Determine textual interpretation and color
+    if final_score >= 0.75:
+        interpretation = "Excellent Fit ✅"
+        color = "#00C851"  # green
+    elif final_score >= 0.6:
+        interpretation = "Good Fit 👍"
+        color = "#ffbb33"  # yellow
+    elif final_score >= 0.4:
+        interpretation = "Trainable / Partial Fit ⚙️"
+        color = "#ff8800"  # orange
+    else:
+        interpretation = "Weak Match ⚠️"
+        color = "#ff4444"  # red
+
+    # Display textual interpretation
+    st.markdown(f"### **Match Interpretation:** {interpretation}")
+
+    # --- Custom colored progress bar ---
+    progress_html = f"""
+    <div style='width: 100%; background-color: #e6e6e6; border-radius: 10px; height: 24px;'>
+    <div style='width: {final_score*100:.1f}%; background-color: {color};
+                height: 100%; border-radius: 10px; text-align: center; 
+                line-height: 24px; color: white; font-weight: bold;'>
+        {final_score*100:.1f}%
+    </div>
+    </div>
+    """
+    st.markdown(progress_html, unsafe_allow_html=True)
+
+    # --- Tooltip with HR-friendly explanation ---
+    with st.expander("ℹ️ What do these scores mean?"):
+        st.markdown("""
+        **Score Range Interpretation**
+        - 🟢 **0.75 – 1.00 → Excellent Fit** — Strong alignment with all role requirements.  
+        - 🟡 **0.60 – 0.74 → Good Fit** — Meets most requirements, minor gaps acceptable.  
+        - ⚙️ **0.40 – 0.59 → Trainable / Partial Fit** — Development potential, needs mentoring.  
+        - 🔴 **0.00 – 0.39 → Weak Match** — Significant skill or qualification gaps detected.  
+        """)
+
+    # --- Red Flag Detection ---
+    red_flags = detect_red_flags(cv_text, jd_text)
     if red_flags:
         st.error("Red Flags Detected:")
         for flag in red_flags:
             st.write(f"- {flag}")
-
     st.markdown("---")
     st.markdown("#### Match Feature Descriptions")
     st.markdown("""
