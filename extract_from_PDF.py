@@ -5,6 +5,10 @@ import layoutparser as lp
 import os
 import numpy as np   # ✅ Add this line
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer, util
+
 def extract_text_from_pdf(pdf_path):
     text = ""
     with fitz.open(pdf_path) as doc:
@@ -325,12 +329,73 @@ def calculate_skill_importance(skills: set, jd_text: str) -> dict:
     
     return skill_weights
 
+# --- Lightweight domain classifier ---
+def detect_domain(text: str) -> str:
+    """
+    Infer general job domain from text using TF-IDF centroid similarity.
+    Returns one of: HR, IT, Finance, Logistics, Marketing, Other.
+    """
+    domains = {
+        "HR": ["human resources", "recruitment", "employee relations", "onboarding", "talent acquisition"],
+        "IT": ["developer", "software", "data", "engineer", "programming", "python", "sap", "system"],
+        "Finance": ["accounting", "audit", "financial", "budget", "tax", "investment"],
+        "Logistics": ["supply chain", "warehouse", "transportation", "logistics", "shipment", "inventory"],
+        "Marketing": ["marketing", "branding", "campaign", "seo", "advertising", "digital media"]
+    }
+
+    # Prepare corpus (one doc per domain + target text)
+    corpus = list(domains.values())
+    corpus = [" ".join(words) for words in corpus] + [text.lower()]
+
+    vectorizer = TfidfVectorizer(stop_words="english")
+    tfidf_matrix = vectorizer.fit_transform(corpus)
+    sims = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
+
+    domain_labels = list(domains.keys())
+    best_idx = int(np.argmax(sims))
+    best_score = sims[best_idx]
+
+    # Apply confidence threshold
+    return domain_labels[best_idx] if best_score > 0.15 else "Other"
+
+from sentence_transformers import SentenceTransformer, util
+
+# --- Pretrained semantic domain classifier ---
+_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# Predefined domain prototypes (can expand)
+_DOMAIN_PROTOTYPES = {
+    "HR": "human resources recruitment employee relations onboarding training payroll",
+    "IT": "software development programming data engineer system design cloud devops sap",
+    "Finance": "accounting auditing financial analysis budgeting tax banking investment",
+    "Logistics": "supply chain transportation warehouse logistics shipping inventory sap ewm",
+    "Marketing": "marketing branding campaign seo advertising digital media content",
+    "Healthcare": "medical healthcare patient clinical hospital nursing pharmaceutical"
+}
+
+def detect_domain(text: str) -> str:
+    """
+    Determine text's domain using semantic embeddings.
+    Returns the domain with highest cosine similarity, else 'Other'.
+    """
+    if not text or len(text.strip()) < 50:
+        return "Other"
+
+    text_emb = _model.encode(text.lower(), convert_to_tensor=True)
+    domain_labels, domain_texts = zip(*_DOMAIN_PROTOTYPES.items())
+    domain_embs = _model.encode(domain_texts, convert_to_tensor=True)
+
+    sims = util.cos_sim(text_emb, domain_embs)[0]
+    best_idx = int(sims.argmax())
+    best_score = float(sims[best_idx])
+
+    return domain_labels[best_idx] if best_score > 0.25 else "Other"
+
 def final_match_score(cv_data: dict, jd_data: dict) -> float:
     """
-    Compute a balanced final match score between CV and Job Description
-    with calibrated weighting, consistency adjustment, and smooth scaling.
+    Compute a more discriminative final score between CV and Job Description.
+    Penalizes domain divergence and generic overlap for higher accuracy.
     """
-
     # --- Extract component scores ---
     skill = skill_match(cv_data['skills'], jd_data['skills'])
     sem = semantic_similarity(cv_data['text'], jd_data['text'])
@@ -340,23 +405,43 @@ def final_match_score(cv_data: dict, jd_data: dict) -> float:
     title = title_match(cv_data['title'], jd_data['title'])
     loc = location_match(cv_data['text'], jd_data['text'])
 
-    # --- Normalize overlap between correlated metrics (minor dampening only) ---
+    jd_text = jd_data.get("text", "").lower()
+    cv_text = cv_data.get("text", "").lower()
+
+    # --- Automatic domain classification ---
+    cv_domain = detect_domain(cv_data.get("text", ""))
+    jd_domain = detect_domain(jd_data.get("text", ""))
+
+    # --- Domain divergence penalty ---
+    domain_penalty = 1.0
+    if cv_domain != jd_domain and "Other" not in (cv_domain, jd_domain):
+        domain_penalty = 0.6  # up to 40% reduction for cross-domain mismatch
+
+
+    # --- Correlation normalization ---
     correction_factor = 1 - abs(title - sem) * 0.1
     sem *= correction_factor
     title *= correction_factor
 
-    # --- Weight distribution (normalized to 1.0) ---
-    weights = {
-    "skills": 0.10,
-    "semantic": 0.40,
-    "tfidf": 0.20,
-    "education": 0.10,
-    "experience": 0.10,
-    "title": 0.07,
-    "location": 0.03
-}
+    # --- TF-IDF & Semantic calibration ---
+    # If semantic is high but skills low, reduce semantic (false positive)
+    if sem > 0.7 and skill < 0.3:
+        sem *= 0.7
+    # If tfidf and sem disagree strongly, balance them
+    if abs(tfidf - sem) > 0.3:
+        sem = (sem + tfidf) / 2
 
-    # --- Weighted composite base score ---
+    # --- Weight distribution ---
+    weights = {
+        "skills": 0.15,
+        "semantic": 0.35,
+        "tfidf": 0.20,
+        "education": 0.10,
+        "experience": 0.10,
+        "title": 0.05,
+        "location": 0.05
+    }
+
     base = (
         weights["skills"] * skill +
         weights["semantic"] * sem +
@@ -367,31 +452,30 @@ def final_match_score(cv_data: dict, jd_data: dict) -> float:
         weights["location"] * loc
     )
 
-    # --- Consistency adjustment ---
-    # Reward profiles with balanced technical-textual alignment
-    # --- Reward overall consistency more strongly ---
+    # --- Domain penalty applied globally ---
+    base *= domain_penalty
+
+    # --- Consistency bonus ---
     consistency = np.mean([skill, sem, tfidf])
     if consistency > 0.7:
-        base += 0.08 * consistency  # stronger lift for uniform strong scores
+        base += 0.05 * consistency
 
-    # --- Soft penalties for weak fundamentals ---
+    # --- Soft penalty for fundamentals ---
     if skill < 0.4 or sem < 0.4:
-        base *= 0.9  # gentler penalty than before
+        base *= 0.9
 
-    # --- Calibrated boost before normalization ---
-    base = min(1.0, base + 0.08)
-
-    # --- Gentler sigmoid (higher output for good fits) ---
-    final = 1 / (1 + np.exp(-5 * (base - 0.45)))
+    # --- Calibration ---
+    base = min(1.0, base + 0.05)
+    final = 1 / (1 + np.exp(-4.5 * (base - 0.45)))
     final = float(np.clip(final, 0.0, 1.0))
+
+    return round(final, 3)
 
     # --- Interpretation tiers ---
     # 0.00–0.39 → Weak Fit
     # 0.40–0.59 → Partial Fit (trainable)
     # 0.60–0.74 → Good Fit
     # 0.75–1.00 → Excellent Fit
-
-    return round(final, 3)
 
 # Prepare data for scoring
 edu_cv = extract_education(cv_text)
