@@ -340,6 +340,11 @@ def final_match_score(cv_data: dict, jd_data: dict) -> float:
     title = title_match(cv_data['title'], jd_data['title'])
     loc = location_match(cv_data['text'], jd_data['text'])
 
+    # --- Normalize overlap between correlated metrics (minor dampening only) ---
+    correction_factor = 1 - abs(title - sem) * 0.1
+    sem *= correction_factor
+    title *= correction_factor
+
     # --- Weight distribution (normalized to 1.0) ---
     weights = {
     "skills": 0.10,
@@ -364,18 +369,20 @@ def final_match_score(cv_data: dict, jd_data: dict) -> float:
 
     # --- Consistency adjustment ---
     # Reward profiles with balanced technical-textual alignment
+    # --- Reward overall consistency more strongly ---
     consistency = np.mean([skill, sem, tfidf])
     if consistency > 0.7:
-        base += 0.05 * consistency  # small bonus for uniformity
+        base += 0.08 * consistency  # stronger lift for uniform strong scores
 
-    # --- Penalty for critical mismatches ---
+    # --- Soft penalties for weak fundamentals ---
     if skill < 0.4 or sem < 0.4:
-        base *= 0.85  # soft penalty for weak fundamentals
+        base *= 0.9  # gentler penalty than before
 
-    # ✅ Option A — Gentle Boost (add this line)
-    base = min(1.0, base + 0.05)  # small global uplift for calibration
-    # --- Sigmoid normalization for smooth grading ---
-    final = 1 / (1 + np.exp(-2 * (base - 0.5)))  # centers around 0.5 mid-fit
+    # --- Calibrated boost before normalization ---
+    base = min(1.0, base + 0.08)
+
+    # --- Gentler sigmoid (higher output for good fits) ---
+    final = 1 / (1 + np.exp(-5 * (base - 0.45)))
     final = float(np.clip(final, 0.0, 1.0))
 
     # --- Interpretation tiers ---
