@@ -1,7 +1,6 @@
 
 import fitz  # PyMuPDF
 import pdfplumber
-import layoutparser as lp
 import os
 import numpy as np   # ✅ Add this line
 
@@ -39,12 +38,31 @@ def extract_tables_from_pdf(pdf_path):
 
 def extract_layout_blocks(pdf_path):
     layout_blocks = []
+    # Import layoutparser lazily because it (and its backends) can be heavy to install.
+    try:
+        import layoutparser as lp
+    except Exception:
+        # Layout extraction is optional — return empty result and inform the caller.
+        print("layoutparser not available; skipping layout extraction. Install layoutparser to enable this feature.")
+        return layout_blocks
+
+    # Try to create the Detectron2 model. If it fails (missing detectron2/torch/etc.),
+    # return empty result and log the error.
+    try:
+        model = lp.models.Detectron2LayoutModel('lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config')
+    except Exception as e:
+        print(f"Failed to load Detectron2 model for layoutparser: {e}. Layout extraction disabled.")
+        return layout_blocks
+
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
             image = page.to_image(resolution=150)
             img = image.original
-            model = lp.models.Detectron2LayoutModel('lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config')
-            layout = model.detect(img)
+            try:
+                layout = model.detect(img)
+            except Exception as e:
+                print(f"Layout detection failed on a page: {e}")
+                layout = None
             layout_blocks.append(layout)
     return layout_blocks
 

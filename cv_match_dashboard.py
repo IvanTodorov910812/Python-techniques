@@ -273,20 +273,44 @@ def detect_red_flags(cv_text, jd_text):
 
 st.title("CV vs Job Description Matcher")
 
-cv_file = st.file_uploader("Upload CV PDF", type=["pdf"])
-jd_file = st.file_uploader("Upload Job Description PDF", type=["pdf"])
+cv_file = st.file_uploader("Upload CV (PDF or TXT)", type=["pdf", "txt"]) 
+jd_file = st.file_uploader("Upload Job Description (PDF or TXT)", type=["pdf", "txt"]) 
 
 
 if cv_file and jd_file:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_cv:
-        tmp_cv.write(cv_file.read())
+    # Save uploaded files to temporary files with correct suffixes
+    cv_name = getattr(cv_file, 'name', 'uploaded_cv')
+    jd_name = getattr(jd_file, 'name', 'uploaded_jd')
+    cv_ext = os.path.splitext(cv_name)[1].lower()
+    jd_ext = os.path.splitext(jd_name)[1].lower()
+
+    cv_suffix = cv_ext if cv_ext in ['.pdf', '.txt'] else '.pdf'
+    jd_suffix = jd_ext if jd_ext in ['.pdf', '.txt'] else '.pdf'
+
+    # Write CV
+    with tempfile.NamedTemporaryFile(delete=False, suffix=cv_suffix) as tmp_cv:
+        data = cv_file.getvalue() if hasattr(cv_file, 'getvalue') else cv_file.read()
+        tmp_cv.write(data)
         cv_path = tmp_cv.name
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_jd:
-        tmp_jd.write(jd_file.read())
+
+    # Write JD
+    with tempfile.NamedTemporaryFile(delete=False, suffix=jd_suffix) as tmp_jd:
+        data = jd_file.getvalue() if hasattr(jd_file, 'getvalue') else jd_file.read()
+        tmp_jd.write(data)
         jd_path = tmp_jd.name
 
-    cv_text = extract_text_from_pdf(cv_path)
-    jd_text = extract_text_from_pdf(jd_path)
+    # Read text depending on file type
+    if cv_suffix == '.pdf':
+        cv_text = extract_text_from_pdf(cv_path)
+    else:
+        with open(cv_path, 'r', encoding='utf-8', errors='replace') as f:
+            cv_text = f.read()
+
+    if jd_suffix == '.pdf':
+        jd_text = extract_text_from_pdf(jd_path)
+    else:
+        with open(jd_path, 'r', encoding='utf-8', errors='replace') as f:
+            jd_text = f.read()
 
     # Skill extraction and normalization
     cv_skills_raw = extract_skills(cv_text)
