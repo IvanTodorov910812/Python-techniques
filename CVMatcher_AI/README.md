@@ -1,9 +1,15 @@
 # Python-techniques
 Web Scraping, Web Automation Flows
 
-#Run the visual Match Dashboard
+#Run the visual Match Dashboard via codespaces
+python3 -m pip install -r requirements.txt
+python3 -m pip install wordcloud
+python3 -m pip install PyMuPDF
+python3 -m pip install pdfplumber
+python3 -m pip install scikit-learn
+python3 -m pip install sentence-transformers
+pip install streamlit --quiet && 
 streamlit run cv_match_dashboard.py
-pip install streamlit --quiet && streamlit run cv_match_dashboard.py
 
 
 🚀 Summary

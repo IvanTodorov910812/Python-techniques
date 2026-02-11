@@ -16,7 +16,7 @@ reportlab
 
 # Optional / heavy (install only if needed)
 layoutparser
-detectron2  # optional, system-specific and may require CUDA/toolchain
+# detectron2  # optional, system-specific and may require CUDA/toolchain (commented: no wheel available)
 torch>=1.11.0  # required by sentence-transformers; will pull CPU or CUDA build depending on environment
 transformers
 
