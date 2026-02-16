@@ -254,9 +254,67 @@ def semantic_similarity(cv_text: str, jd_text: str) -> float:
     return util.cos_sim(cv_emb, jd_emb).item()
 
 
+def extract_locations(text: str) -> set:
+    """
+    Extract GPE and LOC entities using lazy-loaded spaCy model.
+    Falls back safely if model is unavailable.
+    """
+    global nlp
+    nlp = _load_spacy_model()
+
+    if nlp is None:
+        return set()
+
+    doc = nlp(text)
+
+    return {
+        ent.text.lower().strip()
+        for ent in doc.ents
+        if ent.label_ in {"GPE", "LOC"}
+    }
+
+
 def location_match(cv_text: str, jd_text: str) -> int:
-    locations = ["Sofia", "Bulgaria", "Haskovo"]
-    return int(any(loc in cv_text and loc in jd_text for loc in locations))
+    # Normalize text
+    cv_text_lower = cv_text.lower()
+    jd_text_lower = jd_text.lower()
+
+    # 1️⃣ Remote handling
+    if "remote" in jd_text_lower:
+        return 1
+
+    cv_locations = extract_locations(cv_text)
+    jd_locations = extract_locations(jd_text)
+
+    if not cv_locations or not jd_locations:
+        return 0
+
+    # 2️⃣ Exact match
+    if cv_locations.intersection(jd_locations):
+        return 1
+
+    # 3️⃣ Simple hierarchical heuristic (city in country case)
+    for cv_loc in cv_locations:
+        for jd_loc in jd_locations:
+            if cv_loc in jd_loc or jd_loc in cv_loc:
+                return 1
+
+    # 4️⃣ Semantic fallback (lazy-loaded embedding model)
+    global model
+    model = _load_embedding_model()
+
+    if model is None:
+        return 0  # fallback safely
+
+    cv_vectors = model.encode(list(cv_locations))
+    jd_vectors = model.encode(list(jd_locations))
+
+    similarity_matrix = cosine_similarity(cv_vectors, jd_vectors)
+
+    if np.max(similarity_matrix) >= 0.80:
+        return 1
+
+    return 0
 
 
 # ==========================================================
