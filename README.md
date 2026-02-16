@@ -2,7 +2,13 @@
 python3 -m pip install -r requirements.txt  
 streamlit run dashboard.py
 
-Frontend uploads a PDF → Edge Function passes a base64 payload to Python → extract_text→ clean_text → return JSON with text.
+When a CV Is Uploaded
+1. Text is extracted
+2. NLP cleans & tokenizes (spaCy)
+3. Extracted skills/phrases are embedded
+4. Compared against ESCO skill embeddings
+5. Cosine similarity is computed
+6. Closest ESCO concepts are selected
 
 🚀 Summary
 | Area                      | Current                     | Proposed Improvement                                       |
