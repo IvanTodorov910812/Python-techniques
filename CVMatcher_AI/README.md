@@ -1,6 +1,3 @@
-# Python-techniques
-Web Scraping, Web Automation Flows
-
 #Run the visual Match Dashboard via codespaces
 python3 -m pip install -r requirements.txt
 pip install streamlit --quiet && 
