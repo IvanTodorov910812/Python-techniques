@@ -50,9 +50,9 @@ RUN chmod +x download_models.sh
 # VOLUME for persistent cache (will be mounted by Render)
 VOLUME ["/app/cache"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/_stcore/health', timeout=5)" || exit 1
+# Health check (extended timeout for model loading)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=120s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8000/_stcore/health', timeout=10)" || exit 1
 
 # Default command (Streamlit with optimized settings)
 CMD ["streamlit", "run", "dashboard.py", \

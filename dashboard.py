@@ -25,22 +25,29 @@ from extract_from_file import (
 )
 
 # --- Cache Heavy Models (Load Only Once) ---
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=True)
 def load_esco_taxonomy():
     """Load ESCO taxonomy once and cache it across Streamlit reruns.
     
     On Render: Uses persistent /app/cache disk to avoid re-encoding embeddings.
     Locally: Uses current directory cache.
     """
-    with st.spinner("⏳ Loading..."):
-        cache_dir = os.getenv('CACHE_DIR', '.')  # /app/cache on Render, . locally
-        return ESCOTaxonomy(
-            csv_path="data/esco/skills_en.csv",
-            cache_path=os.path.join(cache_dir, "embedding_cache.pkl"),
-            esco_cache_path=os.path.join(cache_dir, "esco_embeddings.pkl")
-        )
+    cache_dir = os.getenv('CACHE_DIR', '.')  # /app/cache on Render, . locally
+    return ESCOTaxonomy(
+        csv_path="data/esco/skills_en.csv",
+        cache_path=os.path.join(cache_dir, "embedding_cache.pkl"),
+        esco_cache_path=os.path.join(cache_dir, "esco_embeddings.pkl")
+    )
 
-esco = load_esco_taxonomy()
+# Initialize ESCO lazily (will be loaded on first interaction, not at import time)
+esco = None
+
+def get_esco():
+    \"\"\"Lazy-load ESCO taxonomy on first use.\"\"\"
+    global esco
+    if esco is None:
+        esco = load_esco_taxonomy()
+    return esco
 
 # --- Skill Taxonomy Normalization ---
 # --- Enhanced Visualization Functions ---
@@ -349,8 +356,9 @@ if cv_file and jd_file:
     # Skill extraction and ESCO normalization 
     cv_skills_raw = extract_skills(cv_text)
     jd_skills_raw = extract_skills(jd_text)
-    cv_normalized = esco.normalize(cv_skills_raw)
-    jd_normalized = esco.normalize(jd_skills_raw)
+    esco_instance = get_esco()
+    cv_normalized = esco_instance.normalize(cv_skills_raw)
+    jd_normalized = esco_instance.normalize(jd_skills_raw)
     cv_skills = set(cv_normalized.values())
     jd_skills = set(jd_normalized.values())
     cv_data = {

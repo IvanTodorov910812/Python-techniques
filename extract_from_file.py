@@ -33,33 +33,59 @@ def get_esco():
 esco = None  # Will be set on first use
 
 # ==========================================================
-# MODEL LOADING (LOAD ONCE)
+# MODEL LOADING (LAZY - LOAD ON FIRST USE, NOT AT IMPORT TIME)
 # ==========================================================
 
-# Load spaCy model once
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    print("Downloading spaCy model (first startup)...")
-    import subprocess
-    result = subprocess.run(
-        ["python", "-m", "spacy", "download", "en_core_web_sm"],
-        capture_output=True,
-        timeout=120
-    )
-    if result.returncode != 0:
-        print(f"WARNING: spaCy download failed: {result.stderr.decode()}")
-        print("Falling back to simple tokenization...")
-        nlp = None
-    else:
+# These will be loaded lazily on first use
+nlp = None
+model = None
+
+def _load_spacy_model():
+    """Lazy load spaCy model on first use."""
+    global nlp
+    if nlp is not None:
+        return nlp
+    
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        return nlp
+    except OSError:
+        print("Downloading spaCy model (first use)...")
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["python", "-m", "spacy", "download", "en_core_web_sm"],
+                capture_output=True,
+                timeout=120
+            )
+            if result.returncode != 0:
+                print(f"WARNING: spaCy download failed: {result.stderr.decode()}")
+                return None
+        except subprocess.TimeoutExpired:
+            print("WARNING: spaCy download timed out")
+            return None
+        
         try:
             nlp = spacy.load("en_core_web_sm")
+            return nlp
         except Exception as e:
-            print(f"WARNING: Could not load spaCy after download: {e}")
-            nlp = None
+            print(f"WARNING: Could not load spaCy: {e}")
+            return None
 
-# Load embedding model once
-model = SentenceTransformer("all-MiniLM-L6-v2")
+def _load_embedding_model():
+    """Lazy load embedding model on first use."""
+    global model
+    if model is not None:
+        return model
+    
+    try:
+        print("Loading embedding model (first use)...")
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+        print("✓ Embedding model loaded")
+        return model
+    except Exception as e:
+        print(f"ERROR: Failed to load embedding model: {e}")
+        return None
 
 
 # ==========================================================
@@ -97,6 +123,9 @@ def clean_text(text: str) -> str:
 # ==========================================================
 
 def extract_skills(text: str) -> set:
+    """Extract skills using lazy-loaded spaCy model."""
+    global nlp
+    nlp = _load_spacy_model()
     skills = set()
     
     # If spaCy failed to load, use simple fallback
@@ -213,9 +242,10 @@ def tfidf_similarity(cv_text: str, jd_text: str) -> float:
 
 
 def semantic_similarity(cv_text: str, jd_text: str) -> float:
-    cv_emb = model.encode(cv_text, convert_to_tensor=True)
-    jd_emb = model.encode(jd_text, convert_to_tensor=True)
-    return util.cos_sim(cv_emb, jd_emb).item()
+    \"\"\"Calculate semantic similarity using lazy-loaded embedding model.\"\"\"
+    global model
+    model = _load_embedding_model()\n    if model is None:
+        print(\"WARNING: Embedding model not available, using TF-IDF similarity instead\")\n        return tfidf_similarity(cv_text, jd_text)\n    cv_emb = model.encode(cv_text, convert_to_tensor=True)\n    jd_emb = model.encode(jd_text, convert_to_tensor=True)\n    return util.cos_sim(cv_emb, jd_emb).item()
 
 
 def location_match(cv_text: str, jd_text: str) -> int:
