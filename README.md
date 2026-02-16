@@ -8,7 +8,7 @@ Frontend uploads a PDF → Edge Function passes a base64 payload to Python → e
 | Area                      | Current                     | Proposed Improvement                                       |
 | ------------------------- | --------------------------- | ---------------------------------------------------------- |
 | **Final Score Algorithm** | Overboosted, uneven weights | Balanced, sigmoid-scaled composite model                 |
-| **ESCO Taxonomy**         | ESCO Classification | Standardized across 27+ countries, up to 85% match precision
+| **ESCO Taxonomy**         | European Commission’s skills classification framework | Standardized across 27+ countries, up to 85% match precision
 | **Skill Matching**        | Flat Jaccard + fuzzy        | Category-weighted with contextual importance               |
 | **Experience Evaluation** | Regex year check            | NLP-based timeline & duration consistency                  |
 | **Education Handling**    | Fuzzy + level bonus         | Hierarchical weighting by degree field relevance           |

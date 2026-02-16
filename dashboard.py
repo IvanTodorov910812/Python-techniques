@@ -43,7 +43,7 @@ def load_esco_taxonomy():
 esco = None
 
 def get_esco():
-    \"\"\"Lazy-load ESCO taxonomy on first use.\"\"\"
+    #Lazy-load ESCO taxonomy on first use
     global esco
     if esco is None:
         esco = load_esco_taxonomy()
