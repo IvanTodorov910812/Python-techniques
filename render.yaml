@@ -12,10 +12,5 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
 
-    disk:
-      - name: embedding_cache
-        mountPath: /app/cache
-        sizeGB: 2
-
     healthCheckPath: /_stcore/health
     autoDeploy: true
