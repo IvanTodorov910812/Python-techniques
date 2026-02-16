@@ -179,7 +179,9 @@ def extract_skills(text):
             skills.add(chunk.text)
     return skills
 
-cv_skills = extract_skills(cv_text_clean)
+raw_skills = extract_skills(cv_text_clean)
+normalized = taxonomy.normalize(raw_skills)
+cv_skills = set(normalized.values())
 jd_skills = extract_skills(jd_text_clean)
 
 matched_skills = cv_skills.intersection(jd_skills)

@@ -13,6 +13,8 @@ import numpy as np
 from collections import Counter
 from datetime import datetime
 import pandas as pd
+from taxonomy_normalizer import SkillTaxonomyNormalizer
+from esco_taxonomy import ESCOEngine
 from extract_from_PDF import (
     extract_text_from_pdf,
     extract_skills,
@@ -21,6 +23,12 @@ from extract_from_PDF import (
     match_report,
     rank_cvs
 )
+
+# --- Initialize Taxonomy Normalizer ---
+taxonomy = SkillTaxonomyNormalizer()
+
+# --- Initialize ESCO  ---
+esco = ESCOEngine()
 
 # --- Skill Taxonomy Normalization ---
 # --- Enhanced Visualization Functions ---
@@ -315,8 +323,8 @@ if cv_file and jd_file:
     # Skill extraction and normalization
     cv_skills_raw = extract_skills(cv_text)
     jd_skills_raw = extract_skills(jd_text)
-    cv_skills = normalize_skills(cv_skills_raw)
-    jd_skills = normalize_skills(jd_skills_raw)
+    cv_skills = esco.normalize_skills(cv_skills_raw)
+    jd_skills = esco.normalize_skills(jd_skills_raw)
     cv_data = {
         'text': cv_text,
         'skills': cv_skills,
