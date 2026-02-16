@@ -45,20 +45,6 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     return text
 
 
-def extract_images_from_pdf(pdf_path: str, output_dir: str):
-    os.makedirs(output_dir, exist_ok=True)
-    with fitz.open(pdf_path) as doc:
-        for page_num, page in enumerate(doc, start=1):
-            for img_index, img in enumerate(page.get_images(full=True)):
-                xref = img[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                image_ext = base_image["ext"]
-                image_filename = f"page{page_num}_img{img_index}.{image_ext}"
-                with open(os.path.join(output_dir, image_filename), "wb") as f:
-                    f.write(image_bytes)
-
-
 def extract_tables_from_pdf(pdf_path: str):
     tables = []
     with pdfplumber.open(pdf_path) as pdf:
