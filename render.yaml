@@ -1,0 +1,62 @@
+# Render Deployment Configuration
+# Save this as render.yaml in your repo root
+
+services:
+  - type: web
+    name: cv-matcher-app
+    env: docker
+    dockerfilePath: Dockerfile
+    region: oregon
+    plan: starter  # $7/month (includes 0.5GB RAM)
+
+    # Environment variables
+    envVars:
+      - key: CACHE_DIR
+        value: /app/cache
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+    # 🔥 PERSISTENT DISK: Cache embeddings here
+    # Without this, embeddings recompute every restart (~30-60 seconds)
+    disk:
+      - name: embedding_cache
+        mountPath: /app/cache
+        sizeGB: 2  # Enough for esco_embeddings.pkl (~50MB) + user cache
+
+    # Health check (for Streamlit)
+    healthCheckPath: /_stcore/health
+
+    # Build command (if needed for multi-stage Docker)
+    buildCommand: docker build -t cv-matcher-app .
+
+    # Auto-deploy on push to main
+    autoDeploy: on
+
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# DEPLOYMENT STEPS:
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# 1. Push this file to your repo (git push)
+#
+# 2. Go to https://render.com/dashboard
+#
+# 3. Click "New +" → "Blueprint" → "Public Git repository"
+#
+# 4. Enter your repo URL, click "Connect"
+#
+# 5. On next screen, select "Deploy"
+#
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PERFORMANCE EXPECTATIONS:
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# ✓ First startup (cold):    ~35-45 seconds (generates esco_embeddings.pkl)
+# ✓ Subsequent restarts:     ~2-3 seconds (loads from persistent cache)
+# ✓ Per CV latency:          ~100-150ms (fuzzy + semantic matching)
+# ✓ Cost:                    ~$8-12/month (starter plan + 2GB disk)
+#
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# IMPORTANT: Update esco_taxonomy.py to use CACHE_DIR
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# See RENDER_SETUP.md for code changes needed

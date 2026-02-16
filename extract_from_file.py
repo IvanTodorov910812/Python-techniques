@@ -15,7 +15,13 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer, util
 
 
-esco = ESCOTaxonomy("data/esco/skills_en.csv")
+# Initialize ESCO with cache directory (respects CACHE_DIR env var for Render deployment)
+_cache_dir = os.getenv('CACHE_DIR', '.')  # /app/cache on Render, . locally
+esco = ESCOTaxonomy(
+    csv_path="data/esco/skills_en.csv",
+    cache_path=os.path.join(_cache_dir, "embedding_cache.pkl"),
+    esco_cache_path=os.path.join(_cache_dir, "esco_embeddings.pkl")
+)
 
 # ==========================================================
 # MODEL LOADING (LOAD ONCE)

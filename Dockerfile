@@ -1,0 +1,78 @@
+# Multi-stage build for optimal image size
+# Stage 1: Builder
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install wheels
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Stage 2: Runtime (minimal image)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install only runtime dependencies (no build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy application code
+COPY . .
+
+# Set environment variables
+ENV PATH=/root/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    TOKENIZERS_PARALLELISM=false
+
+# 🔥 CRITICAL: Create cache directory for persistent storage
+# On Render, mount a volume to /app/cache to persist embeddings
+RUN mkdir -p /app/cache
+
+# ✅ FOR RENDER: Mount a persistent volume to `/app/cache`
+# This prevents re-computation of embeddings on every container restart
+VOLUME ["/app/cache"]
+
+# Environment variable for cache location (update esco_taxonomy.py to use this)
+ENV CACHE_DIR=/app/cache
+
+# Default command (Streamlit)
+CMD ["streamlit", "run", "dashboard.py", "--server.port=8000", "--server.address=0.0.0.0"]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# RENDER DEPLOYMENT CONFIGURATION:
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# In render.yaml or Render web settings:
+#
+# services:
+#   - type: web
+#     name: cv-matcher
+#     env: docker
+#     dockerfilePath: Dockerfile
+#     envVars:
+#       - key: CACHE_DIR
+#         value: /app/cache
+#     disk:
+#       - name: embedding_cache
+#         mountPath: /app/cache
+#         sizeGB: 2
+#
+# This ensures cache files (esco_embeddings.pkl, embedding_cache.pkl)
+# persist across container restarts and deployments!
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Optional: For GPU support on Render (if using CUDA)
+# Replace base image: FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+# Then add: RUN apt-get install -y python3.11 python3-pip

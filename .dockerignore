@@ -1,0 +1,71 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build
+develop-eggs
+dist
+downloads
+eggs
+.eggs
+lib
+lib64
+parts
+sdist
+var
+wheels
+pip-wheel-metadata
+*.egg-info
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv
+env
+ENV
+.venv
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs
+*.md
+LICENSE
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+
+# Build artifacts (but KEEP cache files!)
+.build
+.dist
+
+# Exclude large zip files (but keep data/)
+*.zip
+cv-matcher-saas.zip
+
+# Node (if applicable)
+node_modules
+npm-debug.log
+
+# Keep cache files:
+# ✓ embedding_cache.pkl
+# ✓ esco_embeddings.pkl
+# ✓ data/

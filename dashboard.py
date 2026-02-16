@@ -27,9 +27,18 @@ from extract_from_file import (
 # --- Cache Heavy Models (Load Only Once) ---
 @st.cache_resource(show_spinner=False)
 def load_esco_taxonomy():
-    """Load ESCO taxonomy once and cache it across Streamlit reruns."""
+    """Load ESCO taxonomy once and cache it across Streamlit reruns.
+    
+    On Render: Uses persistent /app/cache disk to avoid re-encoding embeddings.
+    Locally: Uses current directory cache.
+    """
     with st.spinner("⏳ Loading..."):
-        return ESCOTaxonomy("data/esco/skills_en.csv")
+        cache_dir = os.getenv('CACHE_DIR', '.')  # /app/cache on Render, . locally
+        return ESCOTaxonomy(
+            csv_path="data/esco/skills_en.csv",
+            cache_path=os.path.join(cache_dir, "embedding_cache.pkl"),
+            esco_cache_path=os.path.join(cache_dir, "esco_embeddings.pkl")
+        )
 
 esco = load_esco_taxonomy()
 

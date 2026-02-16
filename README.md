@@ -1,6 +1,5 @@
-#Run the visual Match Dashboard via codespaces  
+#Run the application via codespaces  
 python3 -m pip install -r requirements.txt  
-pip install streamlit --quiet && 
 streamlit run dashboard.py
 
 Frontend uploads a PDF → Edge Function passes a base64 payload to Python → extract_text→ clean_text → return JSON with text.

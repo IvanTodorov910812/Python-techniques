@@ -1,0 +1,73 @@
+version: '3.9'
+
+services:
+  cv-matcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: cv-matcher-app
+    
+    ports:
+      - "8000:8000"
+    
+    environment:
+      - CACHE_DIR=/app/cache
+      - PYTHONUNBUFFERED=1
+      - STREAMLIT_SERVER_PORT=8000
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    
+    # 🔥 CRITICAL: Persistent volume for cache files
+    volumes:
+      - cache_volume:/app/cache    # Embeddings persist across restarts
+      - ./data:/app/data:ro        # Read-only for ESCO data
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s  # Wait for embeddings to load on first start
+    
+    restart: unless-stopped
+
+# Named volume for cache persistence
+volumes:
+  cache_volume:
+    driver: local
+
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# LOCAL TESTING WITH DOCKER COMPOSE
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# 1. First run (cold start - generates embeddings):
+#    docker-compose up
+#    
+#    Expected output:
+#    ✓ Encoding ESCO skill embeddings (first startup)...
+#    100%|████████████| 436/436...
+#    ✓ Cached ESCO embeddings...
+#    Streamlit app running at http://localhost:8000
+#
+# 2. Stop and restart (warm start - loads from cache):
+#    CTRL+C
+#    docker-compose up
+#    
+#    Expected output:
+#    ✓ Loading cached ESCO embeddings from /app/cache/esco_embeddings.pkl...
+#    ✓ Loaded 436 ESCO embeddings (skipped recomputation!)
+#    Streamlit app running at http://localhost:8000
+#
+#    Notice how much faster startup is! 🚀
+#
+# 3. Clean up (remove everything including cache):
+#    docker-compose down -v
+#    # This removes named volume, so next start rebuilds cache
+#
+# 4. Test latency:
+#    - Upload a CV in the web interface
+#    - Watch browser console (F12 → Network)
+#    - See response time ~100-150ms
+#
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
