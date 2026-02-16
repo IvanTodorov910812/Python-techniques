@@ -44,6 +44,10 @@ RUN mkdir -p /app/cache
 # Pre-download spaCy model to avoid startup timeout
 RUN python -m spacy download en_core_web_sm
 
+# Pre-compute ESCO embeddings to avoid slow startup on Render free tier
+# This is critical: free tier has limited CPU/RAM, so compute embeddings at build time
+RUN python precompute_embeddings.py || echo "Note: Embeddings will be computed on first run"
+
 # Make model download script executable
 RUN chmod +x download_models.sh
 

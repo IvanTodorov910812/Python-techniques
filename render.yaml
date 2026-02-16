@@ -14,8 +14,10 @@ services:
 
     healthCheckPath: /_stcore/health
     autoDeploy: true
-    
-    disk:
-      - name: embedding_cache
-        mountPath: /app/cache
-        sizeGB: 2
+
+    # NOTE: Disk persistence requires paid plan. Free tier relies on pre-computed embeddings.
+    # To add disk persistence when upgrading:
+    # disk:
+    #   - name: embedding_cache
+    #     mountPath: /app/cache
+    #     sizeGB: 2
