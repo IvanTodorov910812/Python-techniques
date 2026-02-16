@@ -15,13 +15,22 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer, util
 
 
-# Initialize ESCO with cache directory (respects CACHE_DIR env var for Render deployment)
+# Lazy initialization of ESCO (avoid import-time failures)
 _cache_dir = os.getenv('CACHE_DIR', '.')  # /app/cache on Render, . locally
-esco = ESCOTaxonomy(
-    csv_path="data/esco/skills_en.csv",
-    cache_path=os.path.join(_cache_dir, "embedding_cache.pkl"),
-    esco_cache_path=os.path.join(_cache_dir, "esco_embeddings.pkl")
-)
+_esco_instance = None
+
+def get_esco():
+    """Lazy load ESCO taxonomy on first use (avoids import-time failures)"""
+    global _esco_instance
+    if _esco_instance is None:
+        _esco_instance = ESCOTaxonomy(
+            csv_path="data/esco/skills_en.csv",
+            cache_path=os.path.join(_cache_dir, "embedding_cache.pkl"),
+            esco_cache_path=os.path.join(_cache_dir, "esco_embeddings.pkl")
+        )
+    return _esco_instance
+
+esco = None  # Will be set on first use
 
 # ==========================================================
 # MODEL LOADING (LOAD ONCE)
@@ -267,7 +276,7 @@ def rank_cvs(jd_data: dict, cv_folder: str):
         text = clean_text(extract_text_from_pdf(cv_path))
 
         raw_skills = extract_skills(text)
-        normalized = esco.normalize(raw_skills)
+        normalized = get_esco().normalize(raw_skills)
         
         cv_data = {
             'text': text,
