@@ -1,3 +1,5 @@
+--find-links https://download.pytorch.org/whl/cpu
+
 # Core dependencies for CV vs JD matcher
 streamlit
 plotly
@@ -21,7 +23,8 @@ joblib
 # Optional / heavy (install only if needed)
 layoutparser
 # detectron2  # optional, system-specific and may require CUDA/toolchain (commented: no wheel available)
-torch>=1.11.0  # required by sentence-transformers; will pull CPU or CUDA build depending on environment
+# CPU-only PyTorch (much lighter than CUDA version: ~200MB instead of 3GB+)
+torch==2.1.0
 transformers
 
 # Notes:
