@@ -242,6 +242,10 @@ def tfidf_similarity(cv_text: str, jd_text: str) -> float:
 
 
 def semantic_similarity(cv_text: str, jd_text: str) -> float:
+    """
+    Calculate semantic similarity using lazy-loaded embedding model.
+    Falls back to TF-IDF if model is unavailable.
+    """
     global model
     model = _load_embedding_model()
 
@@ -251,9 +255,9 @@ def semantic_similarity(cv_text: str, jd_text: str) -> float:
 
     cv_emb = model.encode(cv_text, convert_to_tensor=True)
     jd_emb = model.encode(jd_text, convert_to_tensor=True)
+
     return util.cos_sim(cv_emb, jd_emb).item()
-
-
+    
 def extract_locations(text: str) -> set:
     """
     Extract GPE and LOC entities using lazy-loaded spaCy model.
