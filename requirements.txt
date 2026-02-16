@@ -15,6 +15,7 @@ python-Levenshtein
 spacy
 openpyxl
 reportlab
+numpy<2
 rapidfuzz
 pandas
 lightgbm
@@ -24,7 +25,7 @@ joblib
 layoutparser
 # detectron2  # optional, system-specific and may require CUDA/toolchain (commented: no wheel available)
 # CPU-only PyTorch (much lighter than CUDA version: ~200MB instead of 3GB+)
-torch==2.1.0
+torch==2.2.0
 transformers==4.46.0
 
 # Notes:
