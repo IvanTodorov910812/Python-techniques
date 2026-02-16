@@ -14,20 +14,22 @@ from collections import Counter
 from datetime import datetime
 import pandas as pd
 from esco_taxonomy import ESCOTaxonomy
-from extract_from_PDF import (
+from extract_from_file import (
     extract_text_from_pdf,
     extract_skills,
     extract_title,
     extract_education,
     match_report,
-    rank_cvs
+    rank_cvs,
+    generate_match_explanation
 )
 
 # --- Cache Heavy Models (Load Only Once) ---
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_esco_taxonomy():
     """Load ESCO taxonomy once and cache it across Streamlit reruns."""
-    return ESCOTaxonomy("data/esco/skills_en.csv")
+    with st.spinner("⏳ Loading..."):
+        return ESCOTaxonomy("data/esco/skills_en.csv")
 
 esco = load_esco_taxonomy()
 
@@ -409,13 +411,13 @@ if cv_file and jd_file:
     st.markdown("---")
     st.markdown("#### Match Feature Descriptions")
     st.markdown("""
-* **Skill Match**: Measures the overlap of skills/keywords between the CV and Job Description using Jaccard similarity.
-* **Experience Match**: Checks if the candidate's years of experience meet or exceed the requirement in the Job Description.
-* **Education Match**: Compares the education level and field using fuzzy string matching.
-* **Title Match**: Assesses how closely the candidate's job titles match the target role/title in the Job Description.
+* **Skill Match**: Measures the overlap of skills/keywords between the CV and Job Description using Jaccard similarity аlgorithm
+* **Experience Match**: Checks if the candidate's years of experience meet or exceed the requirement in the Job Description
+* **Education Match**: Compares the education level and field using Fuzzy Logic
+* **Title Match**: Assesses how closely the candidate's job titles match the target role/title in the Job Description
 * **TF-IDF Similarity**: Evaluates overall text similarity using term frequency-inverse document frequency and cosine similarity.
-* **Semantic Similarity**: Uses sentence-transformers to measure deep semantic similarity between the CV and Job Description.
-* **Location Match**: Checks if the candidate's location matches the job location (simple substring match).
+* **Semantic Similarity**: Deep learning model that measures deep semantic similarity between the CV and Job Description.
+* **Location Match**: Checks if the candidate's location matches the job location
 * **Final Score**: Weighted combination of all features, representing the overall match between CV and Job Description.
     """)
 
@@ -670,14 +672,14 @@ if cv_file and jd_file:
             y -= 18
             c.setFont("Helvetica", 10)
             desc_lines = [
-                "Skill Match: Measures the overlap of skills/keywords between the CV and Job Description using Jaccard similarity.",
-                "Experience Match: Checks if the candidate's years of experience meet or exceed the requirement in the Job Description.",
-                "Education Match: Compares the education level and field using fuzzy string matching.",
-                "Title Match: Assesses how closely the candidate's job titles match the target role/title in the Job Description.",
-                "TF-IDF Similarity: Evaluates overall text similarity using term frequency-inverse document frequency and cosine similarity.",
-                "Semantic Similarity: Uses sentence-transformers to measure deep semantic similarity between the CV and Job Description.",
-                "Location Match: Checks if the candidate's location matches the job location (simple substring match).",
-                "Final Score: Weighted combination of all features, representing the overall match between CV and Job Description."
+                "Skill Match: Measures the overlap of skills/keywords between the CV and Job Description using Jaccard similarity",
+                "Experience Match: Checks if the candidate's years of experience meet or exceed the requirement in the Job Description",
+                "Education Match: Compares the education level using fuzzy string matching",
+                "Title Match: Assesses how closely the candidate's job titles match the target role/title in the Job Description",
+                "TF-IDF Similarity: Evaluates overall text similarity using term frequency-inverse document frequency and cosine similarity",
+                "Semantic Similarity: Uses sentence-transformers to measure deep semantic similarity between the CV and Job Description",
+                "Location Match: Checks if the candidate's location matches the job location (simple substring match)",
+                "Final Score: Weighted combination of all features, representing the overall match between CV and Job Description"
             ]
             for line in desc_lines:
                 c.drawString(60, y, f"- {line}")

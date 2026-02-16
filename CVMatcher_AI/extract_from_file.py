@@ -202,9 +202,9 @@ def final_match_score(cv_data: dict, jd_data: dict) -> float:
     loc = location_match(cv_data['text'], jd_data['text'])
 
     score = (
-        0.20 * skill +
-        0.30 * sem +
-        0.20 * tfidf +
+        0.15 * skill +
+        0.40 * sem +
+        0.15 * tfidf +
         0.10 * edu +
         0.10 * exp +
         0.05 * title +
@@ -254,5 +254,143 @@ def rank_cvs(jd_data: dict, cv_folder: str):
 
         ranking.append((cv_path, score, report))
 
+
     ranking.sort(key=lambda x: x[1], reverse=True)
     return ranking
+
+
+# ==========================================================
+# EXPLAINABILITY & SCORING BREAKDOWN
+# ==========================================================
+
+def generate_match_explanation(report, cv_data, jd_data, cv_text, jd_text):
+    """
+    Generate human-readable explanation of the match score.
+    
+    Returns a dictionary with clear breakdown of why the candidate matched.
+    """
+    
+    # Calculate skill gaps
+    matching_skills = cv_data['skills'] & jd_data['skills']
+    missing_skills = jd_data['skills'] - cv_data['skills']
+    extra_skills = cv_data['skills'] - jd_data['skills']
+    
+    cv_years = extract_years_experience(cv_text)
+    jd_years = extract_years_experience(jd_text)
+    
+    explanation = {
+        'overall_score': report.get('Final Score', 0),
+        'interpretation': _get_score_interpretation(report.get('Final Score', 0)),
+        'top_reasons': [],
+        'gaps': [],
+        'strengths': []
+    }
+    
+    # Top Reasons (Components that contributed positively)
+    if report.get('Skill Match', 0) >= 0.7:
+        explanation['top_reasons'].append({
+            'icon': '✅',
+            'metric': 'Skill Match',
+            'score': f"{report['Skill Match']:.0%}",
+            'detail': f"Found {len(matching_skills)} matching skills: {', '.join(list(matching_skills)[:5])}"
+        })
+    
+    if report.get('Semantic Similarity', 0) >= 0.7:
+        explanation['top_reasons'].append({
+            'icon': '✅',
+            'metric': 'Text Similarity',
+            'score': f"{report['Semantic Similarity']:.0%}",
+            'detail': 'Strong alignment between CV and job description content'
+        })
+    
+    if report.get('Experience Match', 0) == 1:
+        explanation['top_reasons'].append({
+            'icon': '✅',
+            'metric': 'Experience',
+            'score': '100%',
+            'detail': f"{cv_years} years provided ≥ {jd_years} years required"
+        })
+    
+    if report.get('Education Match', 0) >= 0.7:
+        explanation['top_reasons'].append({
+            'icon': '✅',
+            'metric': 'Education',
+            'score': f"{report['Education Match']:.0%}",
+            'detail': f"CV: {cv_data.get('education', 'Not found')} | JD: {jd_data.get('education', 'Not found')}"
+        })
+    
+    if report.get('Title Match', 0) >= 0.6:
+        explanation['top_reasons'].append({
+            'icon': '✅',
+            'metric': 'Title Match',
+            'score': f"{report['Title Match']:.0%}",
+            'detail': f"CV: {cv_data.get('title', 'N/A')} matches JD role requirements"
+        })
+    
+    # Gaps (Areas needing improvement)
+    if missing_skills:
+        skills_str = ', '.join(list(missing_skills)[:5])
+        explanation['gaps'].append({
+            'icon': '⚠️',
+            'type': 'Missing Skills',
+            'detail': f"Job requires: {skills_str}"
+        })
+    
+    if report.get('Skill Match', 0) < 0.5:
+        explanation['gaps'].append({
+            'icon': '⚠️',
+            'type': 'Skill Gap',
+            'detail': f"Only {report['Skill Match']:.0%} of required skills matched"
+        })
+    
+    if cv_years < jd_years:
+        explanation['gaps'].append({
+            'icon': '⚠️',
+            'type': 'Experience Gap',
+            'detail': f"{cv_years} years provided, but {jd_years} years required"
+        })
+    
+    if report.get('Education Match', 0) < 0.6:
+        explanation['gaps'].append({
+            'icon': '⚠️',
+            'type': 'Education Mismatch',
+            'detail': f"Education level only {report['Education Match']:.0%} aligned"
+        })
+    
+    # Strengths (Nice to haves that help)
+    if extra_skills:
+        skills_str = ', '.join(list(extra_skills)[:5])
+        explanation['strengths'].append({
+            'icon': '⭐',
+            'detail': f"Extra relevant skills: {skills_str}"
+        })
+    
+    if report.get('TF-IDF Similarity', 0) >= 0.7:
+        explanation['strengths'].append({
+            'icon': '⭐',
+            'detail': 'Strong terminology alignment with job description'
+        })
+    
+    if cv_years > jd_years:
+        explanation['strengths'].append({
+            'icon': '⭐',
+            'detail': f"Exceeds experience requirement by {cv_years - jd_years} years"
+        })
+    
+    return explanation
+
+
+def _get_score_interpretation(score):
+    """Map score to human-readable interpretation."""
+    if score >= 0.85:
+        return ("🟢 Excellent Match", "Outstanding alignment with all requirements")
+    elif score >= 0.75:
+        return ("🟢 Strong Match", "Very good fit for the role")
+    elif score >= 0.60:
+        return ("🟡 Good Match", "Meets most requirements")
+    elif score >= 0.45:
+        return ("🟠 Moderate Match", "Some gaps but trainable")
+    elif score >= 0.30:
+        return ("🔴 Weak Match", "Significant gaps exist")
+    else:
+        return ("🔴 Poor Match", "Major mismatch with requirements")

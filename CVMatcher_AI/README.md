@@ -1,24 +1,21 @@
 #Run the visual Match Dashboard via codespaces
 python3 -m pip install -r requirements.txt
 pip install streamlit --quiet && 
-streamlit run cv_match_dashboard.py
+streamlit run dashboard.py
 
+Frontend uploads a PDF → Edge Function passes a base64 payload to Python → extract_text→ clean_text → return JSON with text.
 
 🚀 Summary
 | Area                      | Current                     | Proposed Improvement                                       |
 | ------------------------- | --------------------------- | ---------------------------------------------------------- |
 | **Final Score Algorithm** | Overboosted, uneven weights | Balanced, sigmoid-scaled composite model                 |
-| ESCO Classification | ESCO Classification - Occupations | 
+| **ESCO Taxonomy**         | ESCO Classification | Standardized across 27+ countries, up to 85% match precision
 | **Skill Matching**        | Flat Jaccard + fuzzy        | Category-weighted with contextual importance               |
 | **Experience Evaluation** | Regex year check            | NLP-based timeline & duration consistency                  |
 | **Education Handling**    | Fuzzy + level bonus         | Hierarchical weighting by degree field relevance           |
-| **Visualization**         | Plotly, Radar, WordCloud    | Add weighted competency heatmap                            |
-| **Red Flags**             | Heuristic                   | Add ML-based anomaly detection                             |
+| **Visualization**         | Plotly, Radar, WordCloud    | Competency Heatmap                            |
+| **Red Flags**             | Heuristic                   | ML-based anomaly detection                             |
 | **HR Functions**          | Match & Rank                | Add bias detection, feedback loop, and shortlisting export | 
-
-HR Functional Enhancements — Missing Best Practices
-
-Below are functional gaps and recommended features aligned with modern HR recruitment standards:
 
 🔍 Candidate Scoring Enhancements
 
@@ -38,11 +35,9 @@ Diversity Score — Incorporate anonymized background variety as a non-weighted 
 
 📊 Recruiter Workflow Tools
 
-Candidate Comparison Dashboard — Already present, but could show strength/weakness radar heatmaps per role competency.
+Candidate Comparison Dashboard — Strength/weakness radar heatmaps per role competency.
 
 Automated Shortlist Report — Export top matches with gap-analysis and suggested interview topics.
-
-Feedback Loop Integration — Let recruiters manually tag accepted/rejected candidates to fine-tune the weighting model (semi-supervised learning).
 
 💬 Interview Preparation Tools
 
