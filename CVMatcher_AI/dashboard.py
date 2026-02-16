@@ -13,8 +13,7 @@ import numpy as np
 from collections import Counter
 from datetime import datetime
 import pandas as pd
-from taxonomy_normalizer import SkillTaxonomyNormalizer
-from esco_taxonomy import ESCOEngine
+from esco_taxonomy import ESCOTaxonomy
 from extract_from_PDF import (
     extract_text_from_pdf,
     extract_skills,
@@ -24,11 +23,13 @@ from extract_from_PDF import (
     rank_cvs
 )
 
-# --- Initialize Taxonomy Normalizer ---
-taxonomy = SkillTaxonomyNormalizer()
+# --- Cache Heavy Models (Load Only Once) ---
+@st.cache_resource
+def load_esco_taxonomy():
+    """Load ESCO taxonomy once and cache it across Streamlit reruns."""
+    return ESCOTaxonomy("data/esco/skills_en.csv")
 
-# --- Initialize ESCO  ---
-esco = ESCOEngine()
+esco = load_esco_taxonomy()
 
 # --- Skill Taxonomy Normalization ---
 # --- Enhanced Visualization Functions ---
@@ -281,8 +282,20 @@ def detect_red_flags(cv_text, jd_text):
 
 st.title("CV vs Job Description Matcher")
 
+# --- Function to extract text from Excel files ---
+def extract_text_from_excel(excel_path: str) -> str:
+    """Extract text from Excel file (.xls or .xlsx)."""
+    try:
+        df = pd.read_excel(excel_path)
+        # Convert all rows and columns to string and concatenate
+        text = ' '.join(df.astype(str).values.flatten())
+        return text
+    except Exception as e:
+        st.error(f"Error reading Excel file: {e}")
+        return ""
+
 cv_file = st.file_uploader("Upload CV (PDF or TXT)", type=["pdf", "txt"]) 
-jd_file = st.file_uploader("Upload Job Description (PDF or TXT)", type=["pdf", "txt"]) 
+jd_file = st.file_uploader("Upload Job Description (PDF, TXT, or Excel)", type=["pdf", "txt", "xls", "xlsx"]) 
 
 
 if cv_file and jd_file:
@@ -293,7 +306,7 @@ if cv_file and jd_file:
     jd_ext = os.path.splitext(jd_name)[1].lower()
 
     cv_suffix = cv_ext if cv_ext in ['.pdf', '.txt'] else '.pdf'
-    jd_suffix = jd_ext if jd_ext in ['.pdf', '.txt'] else '.pdf'
+    jd_suffix = jd_ext if jd_ext in ['.pdf', '.txt', '.xls', '.xlsx'] else '.pdf'
 
     # Write CV
     with tempfile.NamedTemporaryFile(delete=False, suffix=cv_suffix) as tmp_cv:
@@ -316,15 +329,19 @@ if cv_file and jd_file:
 
     if jd_suffix == '.pdf':
         jd_text = extract_text_from_pdf(jd_path)
+    elif jd_suffix in ['.xls', '.xlsx']:
+        jd_text = extract_text_from_excel(jd_path)
     else:
         with open(jd_path, 'r', encoding='utf-8', errors='replace') as f:
             jd_text = f.read()
 
-    # Skill extraction and normalization
+    # Skill extraction and ESCO normalization 
     cv_skills_raw = extract_skills(cv_text)
     jd_skills_raw = extract_skills(jd_text)
-    cv_skills = esco.normalize_skills(cv_skills_raw)
-    jd_skills = esco.normalize_skills(jd_skills_raw)
+    cv_normalized = esco.normalize(cv_skills_raw)
+    jd_normalized = esco.normalize(jd_skills_raw)
+    cv_skills = set(cv_normalized.values())
+    jd_skills = set(jd_normalized.values())
     cv_data = {
         'text': cv_text,
         'skills': cv_skills,

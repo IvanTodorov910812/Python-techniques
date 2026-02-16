@@ -13,6 +13,10 @@ python-Levenshtein
 spacy
 openpyxl
 reportlab
+rapidfuzz
+pandas
+lightgbm
+joblib
 
 # Optional / heavy (install only if needed)
 layoutparser

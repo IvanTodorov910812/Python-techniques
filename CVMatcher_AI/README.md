@@ -3,11 +3,6 @@ Web Scraping, Web Automation Flows
 
 #Run the visual Match Dashboard via codespaces
 python3 -m pip install -r requirements.txt
-python3 -m pip install wordcloud
-python3 -m pip install PyMuPDF
-python3 -m pip install pdfplumber
-python3 -m pip install scikit-learn
-python3 -m pip install sentence-transformers
 pip install streamlit --quiet && 
 streamlit run cv_match_dashboard.py
 
@@ -15,13 +10,14 @@ streamlit run cv_match_dashboard.py
 🚀 Summary
 | Area                      | Current                     | Proposed Improvement                                       |
 | ------------------------- | --------------------------- | ---------------------------------------------------------- |
-| **Final Score Algorithm** | Overboosted, uneven weights | Balanced, sigmoid-scaled composite model                   |
+| **Final Score Algorithm** | Overboosted, uneven weights | Balanced, sigmoid-scaled composite model                 |
+| **ESCO Classification **  | ESCOXLM-R integration |
 | **Skill Matching**        | Flat Jaccard + fuzzy        | Category-weighted with contextual importance               |
 | **Experience Evaluation** | Regex year check            | NLP-based timeline & duration consistency                  |
 | **Education Handling**    | Fuzzy + level bonus         | Hierarchical weighting by degree field relevance           |
 | **Visualization**         | Plotly, Radar, WordCloud    | Add weighted competency heatmap                            |
 | **Red Flags**             | Heuristic                   | Add ML-based anomaly detection                             |
-| **HR Functions**          | Match & Rank                | Add bias detection, feedback loop, and shortlisting export |
+| **HR Functions**          | Match & Rank                | Add bias detection, feedback loop, and shortlisting export | 
 
 HR Functional Enhancements — Missing Best Practices
 

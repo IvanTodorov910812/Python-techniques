@@ -1,0 +1,272 @@
+from esco_taxonomy import ESCOTaxonomy
+import fitz  # PyMuPDF
+import pdfplumber
+import os
+import re
+import glob
+import numpy as np
+
+from difflib import SequenceMatcher
+from fuzzywuzzy import fuzz
+import spacy
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer, util
+
+
+esco = ESCOTaxonomy("data/esco/skills_en.csv")
+
+# ==========================================================
+# MODEL LOADING (LOAD ONCE)
+# ==========================================================
+
+# Load spaCy model once
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    import subprocess
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    nlp = spacy.load("en_core_web_sm")
+
+# Load embedding model once
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+
+# ==========================================================
+# ATTACHED FILE EXTRACTION
+# ==========================================================
+
+def extract_text_from_pdf(pdf_path: str) -> str:
+    text = ""
+    with fitz.open(pdf_path) as doc:
+        for page in doc:
+            text += page.get_text()
+    return text
+
+
+def extract_images_from_pdf(pdf_path: str, output_dir: str):
+    os.makedirs(output_dir, exist_ok=True)
+    with fitz.open(pdf_path) as doc:
+        for page_num, page in enumerate(doc, start=1):
+            for img_index, img in enumerate(page.get_images(full=True)):
+                xref = img[0]
+                base_image = doc.extract_image(xref)
+                image_bytes = base_image["image"]
+                image_ext = base_image["ext"]
+                image_filename = f"page{page_num}_img{img_index}.{image_ext}"
+                with open(os.path.join(output_dir, image_filename), "wb") as f:
+                    f.write(image_bytes)
+
+
+def extract_tables_from_pdf(pdf_path: str):
+    tables = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            tables.extend(page.extract_tables())
+    return tables
+
+
+# ==========================================================
+# TEXT CLEANING
+# ==========================================================
+
+def clean_text(text: str) -> str:
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'[^\x00-\x7F]+', '', text)
+    return text.strip()
+
+
+# ==========================================================
+# NLP EXTRACTION
+# ==========================================================
+
+def extract_skills(text: str) -> set:
+    doc = nlp(text)
+    skills = set()
+
+    for ent in doc.ents:
+        skills.add(ent.text)
+
+    for chunk in doc.noun_chunks:
+        if len(chunk.text) > 2:
+            skills.add(chunk.text)
+
+    return skills
+
+
+def extract_education(text: str) -> str:
+    edu_keywords = ["Bachelor", "Master", "PhD", "BSc", "MSc", "Doctorate", "degree", "diploma"]
+    for line in text.split('\n'):
+        for kw in edu_keywords:
+            if kw.lower() in line.lower():
+                return line
+    return ""
+
+
+def extract_title(text: str) -> str:
+    match = re.search(r'(Job Title|Position|Role)[:\s]+([A-Za-z\s]+)', text, re.IGNORECASE)
+    return match.group(2).strip() if match else ""
+
+
+def extract_years_experience(text: str) -> int:
+    matches = re.findall(r'(\d+)\+?\s+years?', text, re.IGNORECASE)
+    return max(map(int, matches)) if matches else 0
+
+
+# ==========================================================
+# MATCHING LOGIC
+# ==========================================================
+
+def skill_match(cv_skills: set, jd_skills: set) -> float:
+    if not cv_skills or not jd_skills:
+        return 0.0
+
+    cv_lower = {s.lower() for s in cv_skills}
+    jd_lower = {s.lower() for s in jd_skills}
+
+    exact = cv_lower & jd_lower
+    exact_score = len(exact) / len(jd_lower)
+
+    remaining_cv = cv_lower - exact
+    remaining_jd = jd_lower - exact
+
+    fuzzy_matches = 0
+    for cv_skill in remaining_cv:
+        for jd_skill in remaining_jd:
+            if fuzz.ratio(cv_skill, jd_skill) > 85:
+                fuzzy_matches += 1
+                break
+
+    fuzzy_score = fuzzy_matches / len(jd_lower)
+
+    return 0.7 * exact_score + 0.3 * fuzzy_score
+
+
+def experience_match(cv_text: str, jd_text: str) -> int:
+    return int(
+        extract_years_experience(cv_text) >=
+        extract_years_experience(jd_text)
+    )
+
+
+def education_match(cv_edu: str, jd_edu: str) -> float:
+    if not cv_edu or not jd_edu:
+        return 0.0
+
+    edu_levels = {
+        'phd': 4,
+        'doctorate': 4,
+        'master': 3,
+        'msc': 3,
+        'bachelor': 2,
+        'bsc': 2,
+        'diploma': 1
+    }
+
+    cv_lower = cv_edu.lower()
+    jd_lower = jd_edu.lower()
+
+    cv_level = max((edu_levels.get(level, 0) for level in edu_levels if level in cv_lower), default=0)
+    jd_level = max((edu_levels.get(level, 0) for level in edu_levels if level in jd_lower), default=0)
+
+    base = fuzz.token_set_ratio(cv_edu, jd_edu) / 100
+
+    if cv_level >= jd_level:
+        base += 0.2
+    else:
+        base *= 0.8
+
+    return min(1.0, base)
+
+
+def title_match(cv_title: str, jd_title: str) -> float:
+    return SequenceMatcher(None, cv_title.lower(), jd_title.lower()).ratio()
+
+
+def tfidf_similarity(cv_text: str, jd_text: str) -> float:
+    tfidf = TfidfVectorizer()
+    matrix = tfidf.fit_transform([cv_text, jd_text])
+    return cosine_similarity(matrix[0:1], matrix[1:2])[0][0]
+
+
+def semantic_similarity(cv_text: str, jd_text: str) -> float:
+    cv_emb = model.encode(cv_text, convert_to_tensor=True)
+    jd_emb = model.encode(jd_text, convert_to_tensor=True)
+    return util.cos_sim(cv_emb, jd_emb).item()
+
+
+def location_match(cv_text: str, jd_text: str) -> int:
+    locations = ["Sofia", "Bulgaria", "Haskovo"]
+    return int(any(loc in cv_text and loc in jd_text for loc in locations))
+
+
+# ==========================================================
+# FINAL SCORING
+# ==========================================================
+
+def final_match_score(cv_data: dict, jd_data: dict) -> float:
+
+    skill = skill_match(cv_data['skills'], jd_data['skills'])
+    sem = semantic_similarity(cv_data['text'], jd_data['text'])
+    tfidf = tfidf_similarity(cv_data['text'], jd_data['text'])
+    edu = education_match(cv_data['education'], jd_data['education'])
+    exp = experience_match(cv_data['text'], jd_data['text'])
+    title = title_match(cv_data['title'], jd_data['title'])
+    loc = location_match(cv_data['text'], jd_data['text'])
+
+    score = (
+        0.20 * skill +
+        0.30 * sem +
+        0.20 * tfidf +
+        0.10 * edu +
+        0.10 * exp +
+        0.05 * title +
+        0.05 * loc
+    )
+
+    return round(min(1.0, score), 3)
+
+
+def match_report(cv_data: dict, jd_data: dict) -> dict:
+
+    return {
+        'Skill Match': skill_match(cv_data['skills'], jd_data['skills']),
+        'Experience Match': experience_match(cv_data['text'], jd_data['text']),
+        'Education Match': education_match(cv_data['education'], jd_data['education']),
+        'Title Match': title_match(cv_data['title'], jd_data['title']),
+        'TF-IDF Similarity': tfidf_similarity(cv_data['text'], jd_data['text']),
+        'Semantic Similarity': semantic_similarity(cv_data['text'], jd_data['text']),
+        'Location Match': location_match(cv_data['text'], jd_data['text']),
+        'Final Score': final_match_score(cv_data, jd_data)
+    }
+
+
+# ==========================================================
+# BATCH RANKING
+# ==========================================================
+
+def rank_cvs(jd_data: dict, cv_folder: str):
+
+    ranking = []
+
+    for cv_path in glob.glob(os.path.join(cv_folder, "*.pdf")):
+        text = clean_text(extract_text_from_pdf(cv_path))
+
+        raw_skills = extract_skills(text)
+        normalized = esco.normalize(raw_skills)
+        
+        cv_data = {
+            'text': text,
+            'skills': set(normalized.values()),
+            'title': extract_title(text),
+            'education': extract_education(text)
+        }
+
+        score = final_match_score(cv_data, jd_data)
+        report = match_report(cv_data, jd_data)
+
+        ranking.append((cv_path, score, report))
+
+    ranking.sort(key=lambda x: x[1], reverse=True)
+    return ranking
