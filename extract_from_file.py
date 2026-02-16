@@ -242,7 +242,7 @@ def tfidf_similarity(cv_text: str, jd_text: str) -> float:
 
 
 def semantic_similarity(cv_text: str, jd_text: str) -> float:
-    \"\"\"Calculate semantic similarity using lazy-loaded embedding model.\"\"\"
+    #Calculate semantic similarity using lazy-loaded embedding model
     global model
     model = _load_embedding_model()\n    if model is None:
         print(\"WARNING: Embedding model not available, using TF-IDF similarity instead\")\n        return tfidf_similarity(cv_text, jd_text)\n    cv_emb = model.encode(cv_text, convert_to_tensor=True)\n    jd_emb = model.encode(jd_text, convert_to_tensor=True)\n    return util.cos_sim(cv_emb, jd_emb).item()
