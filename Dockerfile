@@ -23,6 +23,7 @@ WORKDIR /app
 # Install only runtime dependencies (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from builder
@@ -34,21 +35,31 @@ COPY . .
 # Set environment variables
 ENV PATH=/root/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    TOKENIZERS_PARALLELISM=false
+    TOKENIZERS_PARALLELISM=false \
+    CACHE_DIR=/app/cache
 
 # 🔥 CRITICAL: Create cache directory for persistent storage
-# On Render, mount a volume to /app/cache to persist embeddings
 RUN mkdir -p /app/cache
 
-# ✅ FOR RENDER: Mount a persistent volume to `/app/cache`
-# This prevents re-computation of embeddings on every container restart
+# Pre-download spaCy model to avoid startup timeout
+RUN python -m spacy download en_core_web_sm
+
+# Make model download script executable
+RUN chmod +x download_models.sh
+
+# VOLUME for persistent cache (will be mounted by Render)
 VOLUME ["/app/cache"]
 
-# Environment variable for cache location (update esco_taxonomy.py to use this)
-ENV CACHE_DIR=/app/cache
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8000/_stcore/health', timeout=5)" || exit 1
 
-# Default command (Streamlit)
-CMD ["streamlit", "run", "dashboard.py", "--server.port=8000", "--server.address=0.0.0.0"]
+# Default command (Streamlit with optimized settings)
+CMD ["streamlit", "run", "dashboard.py", \
+     "--server.port=8000", \
+     "--server.address=0.0.0.0", \
+     "--client.showErrorDetails=true", \
+     "--logger.level=info"]
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # RENDER DEPLOYMENT CONFIGURATION:

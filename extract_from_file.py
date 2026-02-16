@@ -31,9 +31,23 @@ esco = ESCOTaxonomy(
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
+    print("Downloading spaCy model (first startup)...")
     import subprocess
-    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
-    nlp = spacy.load("en_core_web_sm")
+    result = subprocess.run(
+        ["python", "-m", "spacy", "download", "en_core_web_sm"],
+        capture_output=True,
+        timeout=120
+    )
+    if result.returncode != 0:
+        print(f"WARNING: spaCy download failed: {result.stderr.decode()}")
+        print("Falling back to simple tokenization...")
+        nlp = None
+    else:
+        try:
+            nlp = spacy.load("en_core_web_sm")
+        except Exception as e:
+            print(f"WARNING: Could not load spaCy after download: {e}")
+            nlp = None
 
 # Load embedding model once
 model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -74,8 +88,15 @@ def clean_text(text: str) -> str:
 # ==========================================================
 
 def extract_skills(text: str) -> set:
-    doc = nlp(text)
     skills = set()
+    
+    # If spaCy failed to load, use simple fallback
+    if nlp is None:
+        # Fallback: Simple noun extraction with regex
+        words = re.findall(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b', text)
+        return set(words) if words else set()
+    
+    doc = nlp(text)
 
     for ent in doc.ents:
         skills.add(ent.text)
