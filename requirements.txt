@@ -25,7 +25,7 @@ layoutparser
 # detectron2  # optional, system-specific and may require CUDA/toolchain (commented: no wheel available)
 # CPU-only PyTorch (much lighter than CUDA version: ~200MB instead of 3GB+)
 torch==2.1.0
-transformers
+transformers==4.46.0
 
 # Notes:
 # - Installing 'layoutparser' with detectron2 backend can be large and
