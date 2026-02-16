@@ -11,7 +11,7 @@ streamlit run cv_match_dashboard.py
 | Area                      | Current                     | Proposed Improvement                                       |
 | ------------------------- | --------------------------- | ---------------------------------------------------------- |
 | **Final Score Algorithm** | Overboosted, uneven weights | Balanced, sigmoid-scaled composite model                 |
-| **ESCO Classification **  | ESCOXLM-R integration |
+| ESCO Classification | ESCO Classification - Occupations | 
 | **Skill Matching**        | Flat Jaccard + fuzzy        | Category-weighted with contextual importance               |
 | **Experience Evaluation** | Regex year check            | NLP-based timeline & duration consistency                  |
 | **Education Handling**    | Fuzzy + level bonus         | Hierarchical weighting by degree field relevance           |
